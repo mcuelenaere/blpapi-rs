@@ -8,17 +8,12 @@ pub struct CorrelationId(pub(crate) blpapi_CorrelationId_t);
 
 impl CorrelationId {
     pub fn new_u64(value: u64) -> Self {
-        //TODO: Check!
+        let mut inner = blpapi_CorrelationId_t_::default();
+        inner.set_size(std::mem::size_of::<blpapi_CorrelationId_t>() as c_uint);
+        inner.set_valueType(BLPAPI_CORRELATION_TYPE_INT);
+        inner.set_classId(DEFAULT_CLASS_ID);
+        inner.value.intValue = value;
 
-        let size = std::mem::size_of::<blpapi_CorrelationId_t>() as c_uint;
-        let value_type = BLPAPI_CORRELATION_TYPE_INT;
-        let class_id = DEFAULT_CLASS_ID;
-        let reserved = 0;
-        let _bitfield_1 =
-            blpapi_CorrelationId_t_::new_bitfield_1(size, value_type, class_id, reserved);
-        let value = blpapi_CorrelationId_t___bindgen_ty_1 { intValue: value };
-
-        let inner = blpapi_CorrelationId_t_ { value, _bitfield_1 };
         CorrelationId(inner)
     }
 }
