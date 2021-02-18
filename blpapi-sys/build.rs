@@ -31,14 +31,17 @@ fn main() {
             let path = entry.path();
             if path.is_dir() {
                 let dirname = path.file_name().unwrap_or_default().to_string_lossy();
-                if cfg!(windows) && dirname.ends_with("windows") {
+                if cfg!(target_os = "windows") && dirname.ends_with("windows") {
                     dir.push(path);
                     dir.push("lib");
                     break;
-                } else if cfg!(unix) && dirname.ends_with("linux") {
+                } else if cfg!(target_os = "linux") && dirname.ends_with("linux") {
                     dir.push(path);
                     dir.push("Linux");
                     break;
+                } else if cfg!(target_os = "macos") && dirname.ends_with("macos") {
+                    dir.push(path);
+                    dir.push("Darwin");
                 }
             }
         }
