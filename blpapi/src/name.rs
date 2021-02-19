@@ -1,16 +1,8 @@
 use blpapi_sys::*;
 use std::ffi::{CStr, CString};
 
-lazy_static::lazy_static! {
-    pub static ref SECURITY_DATA: Name = Name::new("securityData");
-    pub static ref SECURITY_NAME: Name = Name::new("security");
-    pub static ref FIELD_DATA: Name = Name::new("fieldData");
-    pub static ref SECURITY_ERROR: Name = Name::new("securityError");
-    pub static ref SECURITIES: Name = Name::new("securities");
-    pub static ref FIELDS_NAME: Name = Name::new("fields");
-    pub static ref SESSION_TERMINATED: Name = Name::new("SesssionTerminated");
-    pub static ref SESSION_STARTUP_FAILURE: Name = Name::new("SessionStartupFailure");
-}
+// NOTE: blpapi_Name_duplicate() and blpapi_Name_destroy() are no-ops, so we can safely
+// implement Copy.
 
 /// A `Name`
 pub struct Name(pub(crate) *mut blpapi_Name_t);

@@ -1,4 +1,3 @@
-use crate::element::Element;
 
 /// Error converted from `c_int`
 #[derive(Debug)]
@@ -15,13 +14,6 @@ pub enum Error {
     Generic(i32),
     /// Some element were not found
     NotFound(String),
-    /// A securityError element was found
-    Security {
-        security: String,
-        category: String,
-        sub_category: Option<String>,
-        message: String,
-    },
     /// Timeout event
     TimeOut,
 }
@@ -58,25 +50,6 @@ impl Error {
                     Err(Error::Generic(res))
                 }
             }
-        }
-    }
-
-    /// Create a security error
-    pub(crate) fn security(security: String, element: Element) -> Error {
-        let category = element
-            .get_element("category")
-            .and_then(|e| e.get_at(0))
-            .unwrap_or_else(String::new);
-        let sub_category = element.get_element("subcategory").and_then(|e| e.get_at(0));
-        let message = element
-            .get_element("message")
-            .and_then(|e| e.get_at(0))
-            .unwrap_or_else(String::new);
-        Error::Security {
-            security,
-            category,
-            sub_category,
-            message,
         }
     }
 }

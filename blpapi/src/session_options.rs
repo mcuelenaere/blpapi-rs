@@ -1,4 +1,4 @@
-use crate::{session::SessionSync, Error};
+use crate::Error;
 use crate::tls_options::TlsOptions;
 use blpapi_sys::*;
 use std::ffi::{CStr, CString};
@@ -77,11 +77,6 @@ impl SessionOptions {
     pub fn with_tls_options(self, tls_options: &TlsOptions) -> Self {
         unsafe { blpapi_SessionOptions_setTlsOptions(self.0, tls_options.0) }
         self
-    }
-
-    /// Build a session, transfer ownership
-    pub fn sync(self) -> SessionSync {
-        SessionSync::from_options(self)
     }
 }
 

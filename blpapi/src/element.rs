@@ -17,7 +17,6 @@ impl Element {
         if res == 0 {
             Some(Element { ptr })
         } else {
-            log::warn!("cannot find element: '{}'", res);
             None
         }
     }
