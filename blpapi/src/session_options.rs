@@ -1,4 +1,5 @@
 use crate::{session::SessionSync, Error};
+use crate::tls_options::TlsOptions;
 use blpapi_sys::*;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_int;
@@ -70,6 +71,12 @@ impl SessionOptions {
         let res = unsafe { blpapi_SessionOptions_setServerPort(self.0, port) };
         Error::check(res)?;
         Ok(self)
+    }
+
+    /// Set TLS options
+    pub fn with_tls_options(self, tls_options: &TlsOptions) -> Self {
+        unsafe { blpapi_SessionOptions_setTlsOptions(self.0, tls_options.0) }
+        self
     }
 
     /// Build a session, transfer ownership
