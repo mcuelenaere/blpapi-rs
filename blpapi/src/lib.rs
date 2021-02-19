@@ -3,6 +3,7 @@ pub mod datetime;
 pub mod element;
 pub mod errors;
 pub mod event;
+pub mod logging;
 pub mod message;
 pub mod message_iterator;
 pub mod name;
