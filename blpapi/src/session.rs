@@ -2,6 +2,7 @@ use crate::{
     correlation_id::CorrelationId,
     element::Element,
     event::{Event, EventType},
+    identity::Identity,
     name,
     ref_data::RefData,
     request::Request,
@@ -66,6 +67,13 @@ impl Session {
             unsafe { blpapi_Session_getService(self.ptr, &mut service as *mut _, name.as_ptr()) };
         Error::check(res)?;
         Ok(Service(service))
+    }
+
+    /// Return a Identity which is valid but has not been
+    /// authorized.
+    pub fn create_identity(&self) -> Identity {
+        let identity = unsafe { blpapi_Session_createIdentity(self.ptr) };
+        Identity(identity)
     }
 
     /// Send request
