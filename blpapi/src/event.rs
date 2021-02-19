@@ -1,7 +1,8 @@
 use crate::errors::Error;
-use crate::message_iterator::MessageIterator;
+use crate::message::Message;
 use blpapi_sys::*;
 use std::os::raw::c_int;
+use std::marker::PhantomData;
 use std::ptr;
 
 /// An event
@@ -15,7 +16,11 @@ impl Event {
 
     /// Get an iterator over all messages of this event
     pub fn messages(&self) -> MessageIterator {
-        MessageIterator::new(self)
+        let ptr = unsafe { blpapi_MessageIterator_create(self.0) };
+        MessageIterator {
+            ptr,
+            _phantom: PhantomData,
+        }
     }
 }
 
@@ -31,6 +36,36 @@ impl Drop for Event {
         unsafe { blpapi_Event_release(self.0); }
     }
 }
+
+/// A message iterator
+pub struct MessageIterator<'a> {
+    pub(crate) ptr: *mut blpapi_MessageIterator_t,
+    _phantom: PhantomData<&'a Event>,
+}
+
+impl<'a> Drop for MessageIterator<'a> {
+    fn drop(&mut self) {
+        unsafe { blpapi_MessageIterator_destroy(self.ptr) }
+    }
+}
+
+impl<'a> Iterator for MessageIterator<'a> {
+    type Item = Message;
+
+    fn next(&mut self) -> Option<Message> {
+        let mut ptr = ptr::null_mut();
+        let res = unsafe { blpapi_MessageIterator_next(self.ptr, &mut ptr as *mut _) };
+        if res == 0 {
+            // Make sure to increment the refcount, so that we can safely drop the message
+            // when we're done with it (or that it may outlive this MessageIterator).
+            unsafe { blpapi_Message_addRef(ptr) };
+            Some(Message(ptr))
+        } else {
+            None
+        }
+    }
+}
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EventType {
