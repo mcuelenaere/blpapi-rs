@@ -1,11 +1,19 @@
 use blpapi_sys::*;
 use std::ffi::{CStr, CString};
+use std::cmp::Ordering;
+use std::ops::Deref;
+use std::hash::{Hash, Hasher};
+use std::string::ToString;
 use std::fmt::Debug;
 
 // NOTE: blpapi_Name_duplicate() and blpapi_Name_destroy() are no-ops, so we can safely
 // implement Copy.
 
+// NOTE: blpapi_Name_duplicate() and blpapi_Name_destroy() are no-ops, so we can safely
+// implement Copy.
+
 /// A `Name`
+#[derive(Copy, Clone)]
 pub struct Name(pub(crate) *mut blpapi_Name_t);
 
 // As per bloomberg documentation:
@@ -14,10 +22,27 @@ pub struct Name(pub(crate) *mut blpapi_Name_t);
 unsafe impl Sync for Name {}
 
 impl Name {
-    /// Create a new name
-    pub fn new(s: &str) -> Self {
-        let name = CString::new(s).unwrap();
-        unsafe { Name(blpapi_Name_create(name.as_ptr())) }
+    /// Construct a 'Name' from the specified 'name_string'. Note also that
+    /// constructing a 'Name' is a relatively expensive operation. If a 'Name'
+    /// will be used repeatedly it is preferable to create it once and re-use
+    /// (or copy) the object.
+    pub fn new(name_string: &str) -> Self {
+        let name = CString::new(name_string).unwrap();
+        let ptr = unsafe { blpapi_Name_create(name.as_ptr()) };
+        Name(ptr)
+    }
+
+    /// If a 'Name' already exists which matches the specified
+    /// 'name_string', then return a copy of that 'Name'; otherwise
+    /// return None.
+    pub fn find_name(name_string: &str) -> Option<Self> {
+        let name = CString::new(name_string).unwrap();
+        let ptr = unsafe { blpapi_Name_findName(name.as_ptr()) };
+        if ptr.is_null() {
+            None
+        } else {
+            Some(Name(ptr))
+        }
     }
 
     /// Name length
@@ -26,8 +51,9 @@ impl Name {
     }
 }
 
-impl std::ops::Deref for Name {
+impl Deref for Name {
     type Target = CStr;
+
     fn deref(&self) -> &Self::Target {
         unsafe {
             let ptr = blpapi_Name_string(self.0);
@@ -35,18 +61,6 @@ impl std::ops::Deref for Name {
             let slice = std::slice::from_raw_parts(ptr as *const u8, len + 1);
             CStr::from_bytes_with_nul_unchecked(slice)
         }
-    }
-}
-
-impl Drop for Name {
-    fn drop(&mut self) {
-        unsafe { blpapi_Name_destroy(self.0) }
-    }
-}
-
-impl Clone for Name {
-    fn clone(&self) -> Self {
-        unsafe { Name(blpapi_Name_duplicate(self.0)) }
     }
 }
 
@@ -59,16 +73,35 @@ impl<S: AsRef<str>> PartialEq<S> for Name {
 
 impl PartialEq<Name> for Name {
     fn eq(&self, other: &Name) -> bool {
-        self.0 == other.0 && self.len() == other.len()
+        self.0 == other.0
     }
 }
 
-impl std::string::ToString for Name {
+impl Eq for Name {
+}
+
+impl PartialOrd<Name> for Name {
+    fn partial_cmp(&self, other: &Name) -> Option<Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
+
+impl Ord for Name {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+impl Hash for Name {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let addr = self.0 as usize;
+        state.write_usize(addr);
+    }
+}
+
+impl ToString for Name {
     fn to_string(&self) -> String {
-        unsafe {
-            let ptr = blpapi_Name_string(self.0);
-            CStr::from_ptr(ptr).to_string_lossy().into_owned()
-        }
+        self.to_string_lossy().into_owned()
     }
 }
 
