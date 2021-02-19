@@ -1,6 +1,6 @@
 use crate::{request::Request, Error};
 use blpapi_sys::*;
-use std::ffi::CStr;
+use std::ffi::{CString, CStr};
 use std::fmt::{Debug, Display, Formatter};
 use std::os::raw::c_int;
 
@@ -17,8 +17,43 @@ impl Service {
 
     /// Create a new request
     pub fn create_request(&self, operation: &str) -> Result<Request, Error> {
-        Request::new(self, operation)
+        let operation = CString::new(operation)
+            .map_err(|err| Error::StringConversionError(Box::new(err)))?;
+        let mut ptr = std::ptr::null_mut();
+        let res = unsafe {
+            blpapi_Service_createRequest(
+                self.0,
+                &mut ptr,
+                operation.as_ptr()
+            )
+        };
+        Error::check(res)?;
+
+        Ok(unsafe { Request::new(ptr) })
     }
+
+    /// Create a new authorization request
+    pub fn create_authorization_request(&self, operation: Option<&str>) -> Result<Request, Error> {
+        let operation = match operation {
+            Some(operation) => Some(
+                CString::new(operation)
+                    .map_err(|err| Error::StringConversionError(Box::new(err)))?
+            ),
+            None => None,
+        };
+        let mut ptr = std::ptr::null_mut();
+        let res = unsafe {
+            blpapi_Service_createAuthorizationRequest(
+                self.0,
+                &mut ptr,
+                operation.map_or(std::ptr::null(), |operation| operation.as_ptr())
+            )
+        };
+        Error::check(res)?;
+
+        Ok(unsafe { Request::new(ptr) })
+    }
+
     /// Format this Service schema to the specified formatter' at
     /// (absolute value specified for) the optionally specified indentation
     /// 'indent_level'. If 'level' is specified, optionally specify 'spaces_per_level',

@@ -1,17 +1,15 @@
 use crate::{
     element::{Element, SetValue},
     name::Name,
-    service::Service,
     Error,
 };
 use blpapi_sys::*;
-use std::ffi::{CString, CStr};
+use std::ffi::CStr;
 use std::ptr;
 use std::os::raw::c_char;
 use std::fmt::{Debug, Formatter};
 
 /// A `Request`
-/// Created from `Service::create_request`
 ///
 /// A `Request` dereferences to an element
 pub struct Request {
@@ -20,17 +18,10 @@ pub struct Request {
 }
 
 impl Request {
-    /// Create a new request from a `Service`
-    pub fn new(service: &Service, operation: &str) -> Result<Self, Error> {
-        let operation = CString::new(operation).unwrap();
-        unsafe {
-            let mut ptr = std::ptr::null_mut();
-            let refptr = &mut ptr as *mut _;
-            let res = blpapi_Service_createRequest(service.0, refptr, operation.as_ptr());
-            Error::check(res)?;
-            let elements = blpapi_Request_elements(ptr);
-            Ok(Request { ptr, elements })
-        }
+    /// Create a new request
+    pub(crate) unsafe fn new(ptr: *mut blpapi_Request_t) -> Self {
+        let elements = blpapi_Request_elements(ptr);
+        Request { ptr, elements }
     }
 
     /// Return the request's id if one exists, otherwise return None.
@@ -52,7 +43,7 @@ impl Request {
                 .to_owned()
                 .into_string()
                 .map(|s| Some(s))
-                .map_err(|err| Error::StringConversionError(err))
+                .map_err(|err| Error::StringConversionError(Box::new(err)))
         }
     }
 
