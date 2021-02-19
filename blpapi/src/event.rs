@@ -3,6 +3,7 @@ use crate::message::Message;
 use blpapi_sys::*;
 use std::os::raw::c_int;
 use std::marker::PhantomData;
+use std::fmt::{Debug, Formatter};
 use std::ptr;
 
 /// An event
@@ -34,6 +35,12 @@ impl Clone for Event {
 impl Drop for Event {
     fn drop(&mut self) {
         unsafe { blpapi_Event_release(self.0); }
+    }
+}
+
+impl Debug for Event {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("Event[eventType={:?}]", self.event_type()))
     }
 }
 

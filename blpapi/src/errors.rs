@@ -1,5 +1,5 @@
 use blpapi_sys::*;
-use std::ffi::CStr;
+use std::ffi::{CStr, IntoStringError};
 
 #[derive(Debug)]
 pub enum BlpApiError {
@@ -90,6 +90,7 @@ pub enum Error {
     NotFound(String),
     /// Timeout event
     TimeOut,
+    StringConversionError(IntoStringError),
     BlpApiError(BlpApiError),
 }
 

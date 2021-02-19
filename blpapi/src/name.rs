@@ -1,5 +1,6 @@
 use blpapi_sys::*;
 use std::ffi::{CStr, CString};
+use std::fmt::Debug;
 
 // NOTE: blpapi_Name_duplicate() and blpapi_Name_destroy() are no-ops, so we can safely
 // implement Copy.
@@ -71,8 +72,8 @@ impl std::string::ToString for Name {
     }
 }
 
-impl std::fmt::Debug for Name {
+impl Debug for Name {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Name: '{}'", self.to_string())
+        write!(f, "Name[{}]", self.to_string())
     }
 }

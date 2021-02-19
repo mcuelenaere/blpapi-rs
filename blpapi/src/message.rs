@@ -1,6 +1,8 @@
-use crate::{correlation_id::CorrelationId, element::Element, name::Name};
+use crate::{correlation_id::CorrelationId, errors::Error, element::Element, name::Name};
 use blpapi_sys::*;
 use std::ffi::CStr;
+use std::fmt::{Display, Debug, Formatter};
+use std::os::raw::c_int;
 
 /// A message
 pub struct Message(pub(crate) *mut blpapi_Message_t);
@@ -52,6 +54,29 @@ impl Message {
         let elements = unsafe { blpapi_Message_elements(self.0) };
         Element { ptr: elements }
     }
+
+    /// Format this Message to the specified formatter at the
+    /// (absolute value of) the optionally specified indentation
+    /// 'indent_level'. If 'indent_level' is specified, optionally
+    /// specify 'spaces_per_level', the number of spaces per indentation
+    /// level for this and all of its nested objects. If 'indent_level'
+    /// is negative, suppress indentation of the first line. If
+    /// 'spaces_per_level' is negative, format the entire output on
+    /// one line, suppressing all but the initial indentation (as
+    /// governed by 'indent_level').
+    pub fn print(&self, f: &mut Formatter<'_>, indent_level: isize, spaces_per_level: isize) -> Result<(), Error> {
+        let res = unsafe {
+            let stream = std::mem::transmute(f);
+            blpapi_Message_print(
+                self.0,
+                Some(crate::utils::stream_writer),
+                stream,
+                indent_level as c_int,
+                spaces_per_level as c_int
+            )
+        };
+        Error::check(res)
+    }
 }
 
 impl Clone for Message {
@@ -64,5 +89,17 @@ impl Clone for Message {
 impl Drop for Message {
     fn drop(&mut self) {
         unsafe { blpapi_Message_release(self.0) };
+    }
+}
+
+impl Debug for Message {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("Message[messageType={}]", self.message_type().to_string_lossy()))
+    }
+}
+
+impl Display for Message {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.print(f, 0, 4).map_err(|_| std::fmt::Error)
     }
 }
