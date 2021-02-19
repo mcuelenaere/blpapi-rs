@@ -2,21 +2,29 @@ use blpapi_sys::*;
 use std::os::raw::c_uint;
 use std::fmt::{Debug, Formatter};
 
-const DEFAULT_CLASS_ID: c_uint = 0;
-
 /// A Correlation Id
 pub struct CorrelationId(pub(crate) blpapi_CorrelationId_t);
 
 impl CorrelationId {
-    pub fn new_u64(value: u64) -> Self {
+    pub fn new_empty() -> Self {
+        let inner = blpapi_CorrelationId_t_::default();
+        CorrelationId(inner)
+    }
+
+    pub fn new_int(value: u64, class_id: Option<usize>) -> Self {
         let mut inner = blpapi_CorrelationId_t_::default();
         inner.set_size(std::mem::size_of::<blpapi_CorrelationId_t>() as c_uint);
         inner.set_valueType(BLPAPI_CORRELATION_TYPE_INT);
-        inner.set_classId(DEFAULT_CLASS_ID);
+        inner.set_classId(class_id.unwrap_or(0) as c_uint);
         inner.value.intValue = value;
 
         CorrelationId(inner)
     }
+
+    pub fn value_type(&self) -> CorrelationType {
+        CorrelationType::from(self.0.valueType())
+    }
+}
 
 impl Debug for CorrelationId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

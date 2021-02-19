@@ -29,7 +29,6 @@ impl SessionOptions {
             BLPAPI_CLIENTMODE_AUTO => Ok(ClientMode::Auto),
             BLPAPI_CLIENTMODE_DAPI => Ok(ClientMode::DApi),
             BLPAPI_CLIENTMODE_SAPI => Ok(ClientMode::SApi),
-            BLPAPI_CLIENTMODE_COMPAT_33X => Ok(ClientMode::Compat33X),
             _ => Err(Error::Generic(mode)),
         }
     }
@@ -40,7 +39,6 @@ impl SessionOptions {
             ClientMode::Auto => BLPAPI_CLIENTMODE_AUTO,
             ClientMode::DApi => BLPAPI_CLIENTMODE_DAPI,
             ClientMode::SApi => BLPAPI_CLIENTMODE_SAPI,
-            ClientMode::Compat33X => BLPAPI_CLIENTMODE_COMPAT_33X,
         };
         unsafe {
             blpapi_SessionOptions_setClientMode(self.0, mode as c_int);
@@ -78,6 +76,13 @@ impl SessionOptions {
         unsafe { blpapi_SessionOptions_setTlsOptions(self.0, tls_options.0) }
         self
     }
+
+    /// Set authentication options
+    pub fn with_authentication_options(self, auth_options: &str) -> Self {
+        let auth_options = CString::new(auth_options).unwrap();
+        unsafe { blpapi_SessionOptions_setAuthenticationOptions(self.0, auth_options.as_ptr()) };
+        self
+    }
 }
 
 impl Drop for SessionOptions {
@@ -111,8 +116,6 @@ pub enum ClientMode {
     DApi,
     /// Server API
     SApi,
-    /// Compat 33X
-    Compat33X,
 }
 
 #[cfg(test)]
