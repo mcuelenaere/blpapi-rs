@@ -15,6 +15,12 @@ impl Service {
         name.to_string_lossy().into_owned()
     }
 
+    /// Get service description
+    pub fn description(&self) -> String {
+        let description = unsafe { CStr::from_ptr(blpapi_Service_description(self.0)) };
+        description.to_string_lossy().into_owned()
+    }
+
     /// Create a new request
     pub fn create_request(&self, operation: &str) -> Result<Request, Error> {
         let operation = CString::new(operation)
@@ -80,6 +86,13 @@ impl Service {
 impl Drop for Service {
     fn drop(&mut self) {
         unsafe { blpapi_Service_release(self.0) }
+    }
+}
+
+impl Clone for Service {
+    fn clone(&self) -> Self {
+        unsafe { blpapi_Service_addRef(self.0) };
+        Service(self.0)
     }
 }
 
