@@ -1,6 +1,8 @@
+use crate::errors::Error;
 use crate::message_iterator::MessageIterator;
 use blpapi_sys::*;
 use std::os::raw::c_int;
+use std::ptr;
 
 /// An event
 pub struct Event(pub(crate) *mut blpapi_Event_t);
@@ -14,6 +16,19 @@ impl Event {
     /// Get an iterator over all messages of this event
     pub fn messages(&self) -> MessageIterator {
         MessageIterator::new(self)
+    }
+}
+
+impl Clone for Event {
+    fn clone(&self) -> Self {
+        unsafe { blpapi_Event_addRef(self.0) };
+        Event(self.0)
+    }
+}
+
+impl Drop for Event {
+    fn drop(&mut self) {
+        unsafe { blpapi_Event_release(self.0); }
     }
 }
 
@@ -55,5 +70,53 @@ impl From<c_int> for EventType {
             BLPAPI_EVENTTYPE_REQUEST => EventType::Request,
             _ => EventType::Unknown,
         }
+    }
+}
+
+pub struct EventQueue(pub(crate) *mut blpapi_EventQueue_t);
+
+impl EventQueue {
+    /// Construct an empty event queue.
+    pub fn new() -> Self {
+        let ptr = unsafe { blpapi_EventQueue_create() };
+        EventQueue(ptr)
+    }
+
+    /// Returns the next Event available from the EventQueue. If
+    /// the specified 'timeout' is zero this will wait forever for
+    /// the next event. If the specified 'timeout' is non zero then
+    /// if no Event is available within the specified 'timeout' in
+    /// milliseconds an Event with a type() of TIMEOUT will be returned.
+    pub fn next_event(&mut self, timeout: Option<isize>) -> Event {
+        let timeout = timeout.unwrap_or(0) as c_int;
+        let event = unsafe { blpapi_EventQueue_nextEvent(self.0, timeout) };
+        Event(event)
+    }
+
+    /// If the EventQueue is non-empty, return the next Event available.
+    /// If the EventQueue is empty, return None with no effect on the state
+    /// of EventQueue. This method never blocks.
+    pub fn try_next_event(&mut self) -> Result<Event, Error> {
+        let mut event: *mut blpapi_Event_t = ptr::null_mut();
+        let ret = unsafe { blpapi_EventQueue_tryNextEvent(self.0, &mut event) };
+        Error::check(ret)?;
+
+        Ok(Event(event))
+    }
+
+    /// Purges any Event objects in this EventQueue which have not
+    /// been processed and cancel any pending requests linked to
+    /// this EventQueue. The EventQueue can subsequently be
+    /// re-used for a subsequent request.
+    pub fn purge(&mut self) {
+        unsafe { blpapi_EventQueue_purge(self.0); }
+    }
+}
+
+impl Drop for EventQueue {
+    /// Destroy this event queue and cancel any pending request
+    /// that are linked to this queue.
+    fn drop(&mut self) {
+        unsafe { blpapi_EventQueue_destroy(self.0); }
     }
 }
