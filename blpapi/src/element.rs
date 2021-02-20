@@ -6,8 +6,73 @@ use std::{
     os::raw::c_int,
     ptr,
 };
+use std::fmt::{Display, Debug, Formatter};
+
+#[derive(Debug, PartialEq)]
+pub enum DataType {
+    /// Bool
+    Bool,
+    /// Char
+    Char,
+    /// Unsigned 8 bit value
+    Byte,
+    /// 32 bit Integer
+    Int32,
+    /// 64 bit Integer
+    Int64,
+    /// 32 bit Floating point - IEEE
+    Float32,
+    /// 64 bit Floating point - IEEE
+    Float64,
+    /// ASCIIZ string
+    String,
+    /// Opaque binary data
+    ByteArray,
+    /// Date
+    Date,
+    /// Timestamp
+    Time,
+    ///
+    Decimal,
+    /// Date and time
+    DateTime,
+    /// An opaque enumeration
+    Enumeration,
+    /// Sequence type
+    Sequence,
+    /// Choice type
+    Choice,
+    /// Used for some internal messages
+    CorrelationId,
+}
+
+impl From<blpapi_DataType_t> for DataType {
+    fn from(data_type: blpapi_DataType_t) -> Self {
+        match data_type {
+            blpapi_sys::blpapi_DataType_t_BLPAPI_DATATYPE_BOOL => DataType::Bool,
+            blpapi_sys::blpapi_DataType_t_BLPAPI_DATATYPE_CHAR => DataType::Char,
+            blpapi_sys::blpapi_DataType_t_BLPAPI_DATATYPE_BYTE => DataType::Byte,
+            blpapi_sys::blpapi_DataType_t_BLPAPI_DATATYPE_INT32 => DataType::Int32,
+            blpapi_sys::blpapi_DataType_t_BLPAPI_DATATYPE_INT64 => DataType::Int64,
+            blpapi_sys::blpapi_DataType_t_BLPAPI_DATATYPE_FLOAT32 => DataType::Float32,
+            blpapi_sys::blpapi_DataType_t_BLPAPI_DATATYPE_FLOAT64 => DataType::Float64,
+            blpapi_sys::blpapi_DataType_t_BLPAPI_DATATYPE_STRING => DataType::String,
+            blpapi_sys::blpapi_DataType_t_BLPAPI_DATATYPE_BYTEARRAY => DataType::ByteArray,
+            blpapi_sys::blpapi_DataType_t_BLPAPI_DATATYPE_DATE => DataType::Date,
+            blpapi_sys::blpapi_DataType_t_BLPAPI_DATATYPE_TIME => DataType::Time,
+            blpapi_sys::blpapi_DataType_t_BLPAPI_DATATYPE_DECIMAL => DataType::Decimal,
+            blpapi_sys::blpapi_DataType_t_BLPAPI_DATATYPE_DATETIME => DataType::DateTime,
+            blpapi_sys::blpapi_DataType_t_BLPAPI_DATATYPE_ENUMERATION => DataType::Enumeration,
+            blpapi_sys::blpapi_DataType_t_BLPAPI_DATATYPE_SEQUENCE => DataType::Sequence,
+            blpapi_sys::blpapi_DataType_t_BLPAPI_DATATYPE_CHOICE => DataType::Choice,
+            blpapi_sys::blpapi_DataType_t_BLPAPI_DATATYPE_CORRELATION_ID => DataType::CorrelationId,
+            _ => panic!("unsupported data type"),
+        }
+    }
+}
 
 /// An element
+#[derive(Clone)]
 pub struct Element {
     pub(crate) ptr: *mut blpapi_Element_t,
 }
@@ -30,6 +95,12 @@ impl Element {
     pub fn name(&self) -> Name {
         let name = unsafe { blpapi_Element_name(self.ptr) };
         Name(name)
+    }
+
+    /// Data type
+    pub fn data_type(&self) -> DataType {
+        let data_type: blpapi_DataType_t = unsafe { blpapi_Element_datatype(self.ptr) as u32 };
+        DataType::from(data_type)
     }
 
     /// Has element
@@ -107,6 +178,18 @@ impl Element {
         value.append_to(self)
     }
 
+    /// Return true if the value of the sub-element at the specified
+    /// 'position' in a sequence or choice element is a null value. An
+    /// error is returned if 'position >= numElements()'.
+    pub fn is_null_value(&self, index: usize) -> Result<bool, Error> {
+        let res = unsafe { blpapi_Element_isNullValue(self.ptr, index) };
+        if res != 0 && res != 1 {
+            Error::check(res)?
+        }
+
+        Ok(res != 0)
+    }
+
     /// Get value at given index
     pub fn get_at<V: GetValue>(&self, index: usize) -> Option<V> {
         V::get_at(self, index)
@@ -154,6 +237,54 @@ impl Element {
             element: self,
             i: 0,
         }
+    }
+
+    /// Return true if 'elementDefinition().maxValues() > 1' or
+    /// 'elementDefinition().maxValues() == UNBOUNDED', and false otherwise.
+    pub fn is_array(&self) -> bool {
+        let res = unsafe { blpapi_Element_isArray(self.ptr) };
+        res != 0
+    }
+
+    /// Return true if the DataType is either SEQUENCE or CHOICE and the
+    /// element is not an array element.  Return false otherwise.
+    pub fn is_complex_type(&self) -> bool {
+        let res = unsafe { blpapi_Element_isComplexType(self.ptr) };
+        res != 0
+    }
+
+    // Format this Element to the specified output 'stream' at the
+    // (absolute value of) the optionally specified indentation 'level' and
+    // return a reference to 'stream'. If 'level' is specified, optionally
+    // specify 'spacesPerLevel', the number of spaces per indentation level
+    // for this and all of its nested objects. If 'level' is negative,
+    // suppress indentation of the first line. If 'spacesPerLevel' is
+    // negative, format the entire output on one line, suppressing all but
+    // the initial indentation (as governed by 'level').
+    pub fn print(&self, f: &mut Formatter<'_>, level: isize, spaces_per_level: isize) -> Result<(), Error> {
+        let res = unsafe {
+            let stream = std::mem::transmute(f);
+            blpapi_Element_print(
+                self.ptr,
+                Some(crate::utils::stream_writer),
+                stream,
+                level as c_int,
+                spaces_per_level as c_int
+            )
+        };
+        Error::check(res)
+    }
+}
+
+impl Debug for Element {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("Element[name={:?} data_type={:?}]", self.name(), self.data_type()))
+    }
+}
+
+impl Display for Element {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.print(f, 0, 4).map_err(|_| std::fmt::Error)
     }
 }
 
