@@ -7,17 +7,6 @@ use std::os::raw::c_int;
 /// A SessionOptions
 ///
 /// Behaves like a `Session` builder
-///
-/// # Example
-///
-/// ```
-/// use blpapi::session_options::SessionOptions;
-///
-/// let session = SessionOptions::default()
-///     .with_server_host("localhost").unwrap()
-///     .with_server_port(8194).unwrap()
-///     .sync();
-/// ```
 pub struct SessionOptions(pub(crate) *mut blpapi_SessionOptions_t);
 
 impl SessionOptions {
@@ -127,6 +116,5 @@ mod tests {
         let host = "localhost";
         let options = SessionOptions::default().with_server_host(host).unwrap();
         assert_eq!(host, options.server_host());
-        let session = options.sync();
     }
 }

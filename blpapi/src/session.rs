@@ -398,10 +398,16 @@ mod tests {
 
     #[test]
     fn send_request() -> Result<(), Error> {
-        let mut session = SessionOptions::default()
+        let session_options = SessionOptions::default()
             .with_server_host("localhost")?
             .with_server_port(8194)?
-            .sync();
+        ;
+
+        let session = Session::create(
+            session_options,
+            None::<fn (&Event) -> ()>,
+            None
+        );
 
         //session.start()?;
         //session.open_service("//blp/refdata")?;

@@ -5,7 +5,7 @@
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 #[test]
-fn test_historical() {
+fn test_session_options() {
     use std::ffi::CString;
 
     unsafe {
@@ -14,7 +14,7 @@ fn test_historical() {
 
         let host = CString::new("localhost").unwrap();
         let res = blpapi_SessionOptions_setServerHost(session_options, host.as_ptr());
-        assert_eq!(2, res, "{}", res);
+        assert_eq!(0, res);
 
         blpapi_SessionOptions_destroy(session_options);
     }

@@ -47,8 +47,13 @@ impl Debug for CorrelationId {
     }
 }
 
-#[test]
-fn correlation_u64() {
-    let id = CorrelationId::new_u64(1);
-    assert_eq!(unsafe { id.0.value.intValue }, 1);
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn correlation_u64() {
+        let id = CorrelationId::new_int(1, None);
+        assert_eq!(unsafe { id.0.value.intValue }, 1);
+    }
 }
