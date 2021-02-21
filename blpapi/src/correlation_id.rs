@@ -1,6 +1,27 @@
 use blpapi_sys::*;
 use std::os::raw::c_uint;
 use std::fmt::{Debug, Formatter};
+use std::hash::{Hash, Hasher};
+
+#[derive(Debug, PartialOrd, PartialEq)]
+pub enum CorrelationType {
+    Unset,
+    Int,
+    Pointer,
+    Autogen,
+}
+
+impl From<u32> for CorrelationType {
+    fn from(correlation_type: u32) -> Self {
+        match correlation_type {
+            blpapi_sys::BLPAPI_CORRELATION_TYPE_UNSET => CorrelationType::Unset,
+            blpapi_sys::BLPAPI_CORRELATION_TYPE_INT => CorrelationType::Int,
+            blpapi_sys::BLPAPI_CORRELATION_TYPE_POINTER => CorrelationType::Pointer,
+            blpapi_sys::BLPAPI_CORRELATION_TYPE_AUTOGEN => CorrelationType::Autogen,
+            _ => CorrelationType::Unset,
+        }
+    }
+}
 
 /// A Correlation Id
 pub struct CorrelationId(pub(crate) blpapi_CorrelationId_t);
@@ -46,6 +67,56 @@ impl Debug for CorrelationId {
         f.write_str("]")
     }
 }
+
+impl PartialEq for CorrelationId {
+    fn eq(&self, other: &Self) -> bool {
+        if self.0.valueType() != other.0.valueType() {
+            return false;
+        }
+
+        if self.0.classId() != other.0.classId() {
+            return false;
+        }
+
+        unsafe {
+            if self.0.valueType() == BLPAPI_CORRELATION_TYPE_POINTER {
+                if self.0.value.ptrValue.pointer != other.0.value.ptrValue.pointer {
+                    return false;
+                }
+            } else if self.0.value.intValue != other.0.value.intValue {
+                return false;
+            }
+        }
+
+        return true;
+    }
+}
+
+impl Eq for CorrelationId {}
+
+impl Hash for CorrelationId {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u32(self.0.valueType());
+        state.write_u32(self.0.classId());
+        unsafe {
+            if self.0.valueType() == BLPAPI_CORRELATION_TYPE_POINTER {
+                state.write_usize(self.0.value.ptrValue.pointer as usize);
+            } else {
+                state.write_u64(self.0.value.intValue);
+            }
+        }
+    }
+}
+
+impl Clone for CorrelationId {
+    fn clone(&self) -> Self {
+        // TODO: if type is pointer, we should do some extra magic
+        Self(self.0)
+    }
+}
+
+unsafe impl Send for CorrelationId {}
+unsafe impl Sync for CorrelationId {}
 
 #[cfg(test)]
 mod tests {
