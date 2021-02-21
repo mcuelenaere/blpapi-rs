@@ -54,3 +54,6 @@ impl Drop for Identity {
         unsafe { blpapi_Identity_release(self.0); }
     }
 }
+
+unsafe impl Send for Identity {}
+unsafe impl Sync for Identity {}

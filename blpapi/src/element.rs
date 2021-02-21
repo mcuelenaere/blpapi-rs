@@ -288,6 +288,9 @@ impl Display for Element {
     }
 }
 
+unsafe impl Send for Element {}
+unsafe impl Sync for Element {}
+
 /// A trait to represent an Element value
 pub trait GetValue: Sized {
     /// Get value from elements by index

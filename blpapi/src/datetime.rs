@@ -19,6 +19,9 @@ impl Default for Datetime {
     }
 }
 
+unsafe impl Send for Datetime {}
+unsafe impl Sync for Datetime {}
+
 pub enum DatetimeParts {
     Year,
     Month,

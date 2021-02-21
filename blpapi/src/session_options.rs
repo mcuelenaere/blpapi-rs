@@ -96,6 +96,9 @@ impl Default for SessionOptions {
     }
 }
 
+unsafe impl Send for SessionOptions {}
+unsafe impl Sync for SessionOptions {}
+
 /// ClientMode
 #[derive(Debug, Clone, Copy)]
 pub enum ClientMode {

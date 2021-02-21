@@ -124,6 +124,9 @@ impl Debug for SubscriptionList {
     }
 }
 
+unsafe impl Send for SubscriptionList {}
+unsafe impl Sync for SubscriptionList {}
+
 pub struct CorrelationIdsIterator<'a> {
     subscription_list: &'a SubscriptionList,
     indices: Range<usize>,

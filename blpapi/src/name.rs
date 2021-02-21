@@ -16,11 +16,6 @@ use std::fmt::Debug;
 #[derive(Copy, Clone)]
 pub struct Name(pub(crate) *mut blpapi_Name_t);
 
-// As per bloomberg documentation:
-// *Each Name instance refers to an entry in a global static table* thus Name is `Sync`
-// https://bloomberg.github.io/blpapi-docs/dotnet/3.12/html/T_Bloomberglp_Blpapi_Name.htm
-unsafe impl Sync for Name {}
-
 impl Name {
     /// Construct a 'Name' from the specified 'name_string'. Note also that
     /// constructing a 'Name' is a relatively expensive operation. If a 'Name'
@@ -110,3 +105,6 @@ impl Debug for Name {
         write!(f, "Name[{}]", self.to_string())
     }
 }
+
+unsafe impl Send for Name {}
+unsafe impl Sync for Name {}

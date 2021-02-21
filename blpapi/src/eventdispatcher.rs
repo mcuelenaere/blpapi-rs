@@ -55,3 +55,6 @@ impl Drop for EventDispatcher {
         unsafe { blpapi_EventDispatcher_destroy(self.0); }
     }
 }
+
+unsafe impl Send for EventDispatcher {}
+unsafe impl Sync for EventDispatcher {}

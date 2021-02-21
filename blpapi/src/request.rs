@@ -86,3 +86,6 @@ impl Debug for Request {
         f.write_fmt(format_args!("Request[requestId={}]", request_id))
     }
 }
+
+unsafe impl Send for Request {}
+unsafe impl Sync for Request {}

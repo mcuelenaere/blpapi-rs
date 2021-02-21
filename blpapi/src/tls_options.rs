@@ -82,6 +82,9 @@ impl Default for TlsOptions {
     }
 }
 
+unsafe impl Send for TlsOptions {}
+unsafe impl Sync for TlsOptions {}
+
 #[cfg(test)]
 mod tests {
     use super::*;

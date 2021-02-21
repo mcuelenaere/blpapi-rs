@@ -483,6 +483,9 @@ impl Drop for Session<'_> {
     }
 }
 
+unsafe impl Send for Session<'_> {}
+unsafe impl Sync for Session<'_> {}
+
 #[derive(Debug, PartialOrd, PartialEq)]
 pub enum SubscriptionStatus {
     /// No longer active, terminated by API.
@@ -547,6 +550,9 @@ impl<'a> Iterator for SubscriptionIterator<'a> {
         }
     }
 }
+
+unsafe impl Send for SubscriptionIterator<'_> {}
+unsafe impl Sync for SubscriptionIterator<'_> {}
 
 #[cfg(test)]
 mod tests {

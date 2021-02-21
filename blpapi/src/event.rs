@@ -44,6 +44,9 @@ impl Debug for Event {
     }
 }
 
+unsafe impl Send for Event {}
+unsafe impl Sync for Event {}
+
 /// A message iterator
 pub struct MessageIterator<'a> {
     pub(crate) ptr: *mut blpapi_MessageIterator_t,
@@ -73,6 +76,8 @@ impl<'a> Iterator for MessageIterator<'a> {
     }
 }
 
+unsafe impl Send for MessageIterator<'_> {}
+unsafe impl Sync for MessageIterator<'_> {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EventType {

@@ -107,3 +107,6 @@ impl Display for Service {
         self.print(f, 0, 4).map_err(|_| std::fmt::Error)
     }
 }
+
+unsafe impl Send for Service {}
+unsafe impl Sync for Service {}

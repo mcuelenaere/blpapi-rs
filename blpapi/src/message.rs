@@ -132,3 +132,6 @@ impl Display for Message {
         self.print(f, 0, 4).map_err(|_| std::fmt::Error)
     }
 }
+
+unsafe impl Send for Message {}
+unsafe impl Sync for Message {}
