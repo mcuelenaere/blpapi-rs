@@ -10,7 +10,7 @@ use crate::{
 };
 use blpapi_sys::*;
 use std::{ffi::CString, ptr};
-use std::os::raw::c_void;
+use std::os::raw::{c_void, c_int, c_char};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use crate::subscriptionlist::SubscriptionList;
 use std::marker::PhantomData;
@@ -384,11 +384,167 @@ impl<'a> Session<'a> {
 
         Ok(correlation_id)
     }
+
+    /// Begin subscriptions for each entry in the specified
+    /// 'subscriptionList' using the specified 'identity' for
+    /// authorization. If the optional 'requestLabel' and
+    /// 'requestLabelLen' are provided they define a string which
+    /// will be recorded along with any diagnostics for this
+    /// operation. There must be at least 'requestLabelLen'
+    /// printable characters at the location 'requestLabel'.
+    ///
+    /// A SUBSCRIPTION_STATUS Event will be generated for each
+    /// entry in the 'subscriptionList'.
+    pub fn subscribe(&mut self, subscription_list: &SubscriptionList, identity: Option<&Identity>) -> Result<(), Error> {
+        let identity = identity.map_or(ptr::null_mut(), |identity| identity.0);
+        let request_label = ptr::null_mut();
+        let request_label_len = 0;
+        let res = unsafe {
+            blpapi_Session_subscribe(
+                self.ptr,
+                subscription_list.0,
+                identity,
+                request_label,
+                request_label_len,
+            )
+        };
+        Error::check(res)
+    }
+
+    /// Modify each subscription in the specified
+    /// 'subscriptionList' to reflect the modified options
+    /// specified for it.
+    ///
+    /// For each entry in the 'subscriptionList' which has a
+    /// correlation ID which identifies a current subscription the
+    /// modified options replace the current options for the
+    /// subscription and a SUBSCRIPTION_STATUS event will be
+    /// generated in the event stream before the first update based
+    /// on the new options. If the correlation ID of an entry in
+    /// the 'subscriptionList' does not identify a current
+    /// subscription then an exception is thrown.
+    pub fn resubscribe(&mut self, subscription_list: &SubscriptionList) -> Result<(), Error> {
+        let request_label = ptr::null_mut();
+        let request_label_len = 0;
+        let res = unsafe {
+            blpapi_Session_resubscribe(
+                self.ptr,
+                subscription_list.0,
+                request_label,
+                request_label_len,
+            )
+        };
+        Error::check(res)
+    }
+
+    /// Cancel each of the current subscriptions identified by the
+    /// specified 'subscriptionList'. If the correlation ID of any
+    /// entry in the 'subscriptionList' does not identify a current
+    /// subscription then that entry is ignored. All entries which
+    /// have valid correlation IDs will be cancelled.
+    ///
+    /// Once this call returns the correlation ids in the
+    /// 'subscriptionList' will not be seen in any subsequent
+    /// Message obtained from a MessageIterator by calling
+    /// next(). However, any Message currently pointed to by a
+    /// MessageIterator when unsubscribe() is called is not
+    /// affected even if it has one of the correlation IDs in the
+    /// 'subscriptionList'. Also any Message where a reference has
+    /// been retained by the application may still contain a
+    /// correlation ID from the 'subscriptionList'. For these
+    /// reasons, although technically an application is free to
+    /// re-use the correlation IDs as soon as this method returns
+    /// it is preferable not to aggressively re-use correlation
+    /// IDs, particularly with an asynchronous Session.
+    pub fn unsubscribe(&mut self, subscription_list: &SubscriptionList) -> Result<(), Error> {
+        let request_label = ptr::null_mut();
+        let request_label_len = 0;
+        let res = unsafe {
+            blpapi_Session_unsubscribe(
+                self.ptr,
+                subscription_list.0,
+                request_label,
+                request_label_len,
+            )
+        };
+        Error::check(res)
+    }
+
+    /// Iterate through all subscriptions in this session
+    pub fn subscriptions(&self) -> SubscriptionIterator {
+        let ptr = unsafe { blpapi_SubscriptionItr_create(self.ptr) };
+        SubscriptionIterator { ptr, _phantom: PhantomData }
+    }
 }
 
 impl Drop for Session<'_> {
     fn drop(&mut self) {
         unsafe { blpapi_Session_destroy(self.ptr) }
+    }
+}
+
+#[derive(Debug, PartialOrd, PartialEq)]
+pub enum SubscriptionStatus {
+    /// No longer active, terminated by API.
+    Unsubscribed,
+    /// Initiated but no updates received.
+    Subscribing,
+    /// Updates are flowing.
+    Subscribed,
+    /// No longer active, terminated by Application.
+    Cancelled,
+    PendingCancellation,
+}
+
+impl From<u32> for SubscriptionStatus {
+    fn from(status: u32) -> Self {
+        match status {
+            blpapi_sys::BLPAPI_SUBSCRIPTIONSTATUS_UNSUBSCRIBED => SubscriptionStatus::Unsubscribed,
+            blpapi_sys::BLPAPI_SUBSCRIPTIONSTATUS_SUBSCRIBING => SubscriptionStatus::Subscribing,
+            blpapi_sys::BLPAPI_SUBSCRIPTIONSTATUS_SUBSCRIBED => SubscriptionStatus::Subscribed,
+            blpapi_sys::BLPAPI_SUBSCRIPTIONSTATUS_CANCELLED => SubscriptionStatus::Cancelled,
+            blpapi_sys::BLPAPI_SUBSCRIPTIONSTATUS_PENDING_CANCELLATION => SubscriptionStatus::PendingCancellation,
+            _ => panic!("unsupported subscription status"),
+        }
+    }
+}
+
+/// An iterator which steps through all the subscriptions in a Session.
+///
+/// The SubscriptionIterator can be used to iterate over all the
+/// active subscriptions for a Session. However, with an
+/// asynchronous Session it is possible for the set of active
+/// subscriptions to change whilst the SubscriptionIterator is
+/// being used. The SubscriptionIterator is guaranteed to never
+/// return the same subscription twice. However, the subscription
+/// the iterator points to may no longer be active. In this case
+/// the result of subscriptionStatus() will be UNSUBSCRIBED or
+/// CANCELLED.
+pub struct SubscriptionIterator<'a> {
+    pub(crate) ptr: *mut blpapi_SubscriptionIterator_t,
+    _phantom: PhantomData<&'a Session<'a>>,
+}
+
+impl<'a> Drop for SubscriptionIterator<'a> {
+    fn drop(&mut self) {
+        unsafe { blpapi_SubscriptionItr_destroy(self.ptr) }
+    }
+}
+
+impl<'a> Iterator for SubscriptionIterator<'a> {
+    type Item = (String, CorrelationId, SubscriptionStatus);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut subscription_string: *const c_char = ptr::null();
+        let mut correlation_id = CorrelationId::new_empty();
+        let mut status: c_int = 0;
+        let res = unsafe { blpapi_SubscriptionItr_next(self.ptr, &mut subscription_string, &mut correlation_id.0, &mut status) };
+        if res == 0 {
+            let subscription_string = unsafe { CStr::from_ptr(subscription_string) };
+            Some((subscription_string.to_string_lossy().to_string(), correlation_id, SubscriptionStatus::from(status as u32)))
+        } else {
+            None
+        }
     }
 }
 
