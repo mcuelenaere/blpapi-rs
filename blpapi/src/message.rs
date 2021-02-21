@@ -2,7 +2,31 @@ use crate::{correlation_id::CorrelationId, errors::Error, element::Element, name
 use blpapi_sys::*;
 use std::ffi::CStr;
 use std::fmt::{Display, Debug, Formatter};
-use std::os::raw::c_int;
+use std::os::raw::{c_int, c_uint};
+
+#[derive(Debug, PartialOrd, PartialEq)]
+pub enum FragmentType {
+    /// message is not fragmented
+    FragmentNone,
+    /// the first fragmented message
+    FragmentStart,
+    /// intermediate fragmented messages
+    FragmentIntermediate,
+    /// the last fragmented message
+    FragmentEnd,
+}
+
+impl From<c_uint> for FragmentType {
+    fn from(fragment_type: u32) -> Self {
+        match fragment_type {
+            blpapi_sys::BLPAPI_MESSAGE_FRAGMENT_NONE => FragmentType::FragmentNone,
+            blpapi_sys::BLPAPI_MESSAGE_FRAGMENT_START => FragmentType::FragmentStart,
+            blpapi_sys::BLPAPI_MESSAGE_FRAGMENT_INTERMEDIATE => FragmentType::FragmentIntermediate,
+            blpapi_sys::BLPAPI_MESSAGE_FRAGMENT_END => FragmentType::FragmentEnd,
+            _ => panic!("unsupported fragment type"),
+        }
+    }
+}
 
 /// A message
 pub struct Message(pub(crate) *mut blpapi_Message_t);
@@ -53,6 +77,11 @@ impl Message {
     pub fn element(&self) -> Element {
         let elements = unsafe { blpapi_Message_elements(self.0) };
         Element { ptr: elements }
+    }
+
+    pub fn fragment_type(&self) -> FragmentType {
+        let fragment_type = unsafe { blpapi_Message_fragmentType(self.0) as u32 };
+        FragmentType::from(fragment_type)
     }
 
     /// Format this Message to the specified formatter at the
