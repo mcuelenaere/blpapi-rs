@@ -16,4 +16,7 @@ pub mod subscriptionlist;
 pub mod tls_options;
 mod utils;
 
+#[cfg(feature="serialization")]
+pub mod serde;
+
 pub use errors::Error;
