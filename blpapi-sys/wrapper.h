@@ -23,6 +23,7 @@
 #include "blpapi_sessionoptions.h"
 #include "blpapi_streamproxy.h"
 #include "blpapi_subscriptionlist.h"
+#include "blpapi_testutil.h"
 #include "blpapi_timepoint.h"
 #include "blpapi_tlsoptions.h"
 #include "blpapi_topic.h"

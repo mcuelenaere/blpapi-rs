@@ -283,3 +283,171 @@ impl<'de, 'a> SeqAccess<'de> for IndexBased<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::errors::Error;
+    use crate::event::EventType;
+    use crate::testutil::EventBuilder;
+    use std::result::Result;
+
+    #[derive(Deserialize, PartialEq, Debug)]
+    struct Reason {
+        source: String,
+        #[serde(rename="errorCode")]
+        error_code: i32,
+        category: String,
+        description: String,
+        subcategory: String,
+    }
+
+    #[derive(Deserialize, PartialEq, Debug)]
+    struct Exception {
+        #[serde(rename="fieldId")]
+        field_id: String,
+        reason: Reason,
+    }
+
+    #[derive(Deserialize, PartialEq, Debug)]
+    struct ReceivedFrom {
+        address: String,
+    }
+
+    #[derive(Deserialize, PartialEq, Debug)]
+    struct SubscriptionStarted {
+        exceptions: Vec<Exception>,
+        #[serde(rename="resubscriptionId")]
+        resubscription_id: i32,
+        #[serde(rename="streamIds")]
+        stream_ids: Vec<String>,
+        #[serde(rename="receivedFrom")]
+        received_from: ReceivedFrom,
+        reason: String,
+    }
+
+    #[test]
+    fn test_subscription_started() -> Result<(), Error> {
+        let msg_contents = r#"
+            {
+                "exceptions": [
+                    {
+                        "fieldId": "field",
+                        "reason": {
+                            "source":      "TestUtil",
+                            "errorCode":   -1,
+                            "category":    "CATEGORY",
+                            "description": "for testing",
+                            "subcategory": "SUBCATEGORY"
+                        }
+                    }
+                ],
+                "resubscriptionId": 123,
+                "streamIds": [
+                    "123",
+                    "456"
+                ],
+                "receivedFrom": { "address": "12.34.56.78:8194" },
+                "reason":      "TestUtil"
+            }
+        "#;
+
+        let event = EventBuilder::new(EventType::SubscriptionData)?
+            .append_message_from_json(Name::new("SubscriptionStarted"), None, msg_contents)?
+            .build();
+
+        let msg = event.messages().next().unwrap();
+        let result = from_element::<SubscriptionStarted>(msg.element()).unwrap();
+
+        assert_eq!(result, SubscriptionStarted {
+            exceptions: vec![Exception {
+                field_id: "field".to_string(),
+                reason: Reason {
+                    source: "TestUtil".to_string(),
+                    error_code: -1,
+                    category: "CATEGORY".to_string(),
+                    description: "for testing".to_string(),
+                    subcategory: "SUBCATEGORY".to_string()
+                }
+            }],
+            resubscription_id: 123,
+            stream_ids: vec!["123".to_string(), "456".to_string()],
+            received_from: ReceivedFrom {
+                address: "12.34.56.78:8194".to_string(),
+            },
+            reason: "TestUtil".to_string()
+        });
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_subelement() -> Result<(), Error> {
+        let msg_contents = r#"
+            {
+                "exceptions": [
+                    {
+                        "fieldId": "field1",
+                        "reason": {
+                            "source":      "TestUtil",
+                            "errorCode":   -1,
+                            "category":    "CATEGORY",
+                            "description": "for testing",
+                            "subcategory": "SUBCATEGORY"
+                        }
+                    },
+                    {
+                        "fieldId": "field2",
+                        "reason": {
+                            "source":      "TestUtil",
+                            "errorCode":   -2,
+                            "category":    "CATEGORY2",
+                            "description": "for testing2",
+                            "subcategory": "SUBCATEGORY2"
+                        }
+                    }
+                ]
+            }
+        "#;
+
+        let event = EventBuilder::new(EventType::SubscriptionData)?
+            .append_message_from_json(Name::new("SubscriptionStarted"), None, msg_contents)?
+            .build();
+
+        let element = event.messages().next().unwrap().element();
+        let exceptions: Vec<_> = element
+            .get_element("exceptions").unwrap()
+            .values::<Element>()
+            .map(|value| from_element::<Exception>(value).unwrap())
+            .collect()
+        ;
+
+        assert_eq!(
+            exceptions,
+            vec![
+                Exception {
+                    field_id: "field1".to_string(),
+                    reason: Reason {
+                        source: "TestUtil".to_string(),
+                        error_code: -1,
+                        category: "CATEGORY".to_string(),
+                        description: "for testing".to_string(),
+                        subcategory: "SUBCATEGORY".to_string()
+                    }
+                },
+                Exception {
+                    field_id: "field2".to_string(),
+                    reason: Reason {
+                        source: "TestUtil".to_string(),
+                        error_code: -2,
+                        category: "CATEGORY2".to_string(),
+                        description: "for testing2".to_string(),
+                        subcategory: "SUBCATEGORY2".to_string()
+                    }
+                },
+            ]
+        );
+
+        Ok(())
+    }
+}

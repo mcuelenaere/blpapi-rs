@@ -120,6 +120,28 @@ impl From<c_int> for EventType {
     }
 }
 
+impl Into<c_int> for EventType {
+    fn into(self) -> c_int {
+        match self {
+            EventType::Admin => BLPAPI_EVENTTYPE_ADMIN as c_int,
+            EventType::SessionStatus => BLPAPI_EVENTTYPE_SESSION_STATUS as c_int,
+            EventType::SubscriptionStatus => BLPAPI_EVENTTYPE_SUBSCRIPTION_STATUS as c_int,
+            EventType::RequestStatus => BLPAPI_EVENTTYPE_REQUEST_STATUS as c_int,
+            EventType::Response => BLPAPI_EVENTTYPE_RESPONSE as c_int,
+            EventType::PartialResponse => BLPAPI_EVENTTYPE_PARTIAL_RESPONSE as c_int,
+            EventType::SubscriptionData => BLPAPI_EVENTTYPE_SUBSCRIPTION_DATA as c_int,
+            EventType::ServiceStatus => BLPAPI_EVENTTYPE_SERVICE_STATUS as c_int,
+            EventType::Timeout => BLPAPI_EVENTTYPE_TIMEOUT as c_int,
+            EventType::AuthorizationStatus => BLPAPI_EVENTTYPE_AUTHORIZATION_STATUS as c_int,
+            EventType::ResolutionStatus => BLPAPI_EVENTTYPE_RESOLUTION_STATUS as c_int,
+            EventType::TopicStatus => BLPAPI_EVENTTYPE_TOPIC_STATUS as c_int,
+            EventType::TokenStatus => BLPAPI_EVENTTYPE_TOKEN_STATUS as c_int,
+            EventType::Request => BLPAPI_EVENTTYPE_REQUEST as c_int,
+            EventType::Unknown => 0,
+        }
+    }
+}
+
 pub struct EventQueue(pub(crate) *mut blpapi_EventQueue_t);
 
 impl EventQueue {

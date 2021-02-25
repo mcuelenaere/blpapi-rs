@@ -19,4 +19,7 @@ mod utils;
 #[cfg(feature="serialization")]
 pub mod serde;
 
+#[cfg(test)]
+mod testutil;
+
 pub use errors::Error;
