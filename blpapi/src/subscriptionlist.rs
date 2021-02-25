@@ -124,6 +124,14 @@ impl Debug for SubscriptionList {
     }
 }
 
+impl Clone for SubscriptionList {
+    fn clone(&self) -> Self {
+        let mut new_subscription_list = SubscriptionList::new();
+        new_subscription_list.append(&self).unwrap();
+        new_subscription_list
+    }
+}
+
 unsafe impl Send for SubscriptionList {}
 unsafe impl Sync for SubscriptionList {}
 
