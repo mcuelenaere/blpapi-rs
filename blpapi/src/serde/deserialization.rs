@@ -97,12 +97,21 @@ macro_rules! unsupported_type {
     };
 }
 
+impl Deserializer {
+    fn is_null(&self) -> Result<bool> {
+        match self.value_index {
+            Some(index) => self.input.is_null_value(index).map_err(|err| Error::BlpApiError(err)),
+            None => self.input.is_null().map_err(|err| Error::BlpApiError(err)),
+        }
+    }
+}
+
 impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
     type Error = Error;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
         V: Visitor<'de> {
-        if self.input.is_null_value(0).map_err(|err| Error::BlpApiError(err))? {
+        if self.is_null()? {
             return self.deserialize_unit(visitor);
         }
 
@@ -144,7 +153,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
 
     fn deserialize_option<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
         V: Visitor<'de> {
-        if self.input.is_null_value(0).map_err(|err| Error::BlpApiError(err))? {
+        if self.is_null()? {
             visitor.visit_none()
         } else {
             visitor.visit_some(self)
@@ -153,7 +162,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
 
     fn deserialize_unit<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
         V: Visitor<'de> {
-        if self.input.is_null_value(0).map_err(|err| Error::BlpApiError(err))? {
+        if self.is_null()? {
             visitor.visit_unit()
         } else {
             Err(Error::ExpectedNull)

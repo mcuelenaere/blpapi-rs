@@ -190,6 +190,16 @@ impl Element {
         Ok(res != 0)
     }
 
+    /// Return true if this element has a null value, and false otherwise.
+    pub fn is_null(&self) -> Result<bool, Error> {
+        let res = unsafe { blpapi_Element_isNull(self.ptr) };
+        if res != 0 && res != 1 {
+            Error::check(res)?
+        }
+
+        Ok(res != 0)
+    }
+
     /// Get value at given index
     pub fn get_at<V: GetValue>(&self, index: usize) -> Option<V> {
         V::get_at(self, index)
