@@ -201,7 +201,7 @@ impl Element {
     }
 
     /// Get value at given index
-    pub fn get_at<V: GetValue>(&self, index: usize) -> Option<V> {
+    pub fn get_at<'e, V: GetValue<'e>>(&'e self, index: usize) -> Option<V> {
         V::get_at(self, index)
     }
 
@@ -220,18 +220,13 @@ impl Element {
         value.set_named(self, name)
     }
 
-    /// Get an element value
-    pub fn element_value<V: GetValue>(&self, element: &str) -> Option<V> {
-        self.get_element(element)?.value()
-    }
-
     /// Get current element value (index at 0)
-    pub fn value<V: GetValue>(&self) -> Option<V> {
+    pub fn value<'e, V: GetValue<'e>>(&'e self) -> Option<V> {
         self.get_at(0)
     }
 
     /// Get an iterator over the values
-    pub fn values<V: GetValue>(&self) -> Values<V> {
+    pub fn values<'e, V: GetValue<'e>>(&'e self) -> Values<V> {
         Values {
             len: self.num_values(),
             element: self,
@@ -302,9 +297,9 @@ unsafe impl Send for Element {}
 unsafe impl Sync for Element {}
 
 /// A trait to represent an Element value
-pub trait GetValue: Sized {
+pub trait GetValue<'e>: Sized {
     /// Get value from elements by index
-    fn get_at(element: &Element, index: usize) -> Option<Self>;
+    fn get_at(element: &'e Element, index: usize) -> Option<Self>;
 }
 
 /// A trait to represent an Element value
@@ -315,6 +310,7 @@ pub trait SetValue: Sized {
     fn set(self, element: &mut Element, name: &str) -> Result<(), Error>;
     /// Set value from element at name
     fn set_named(self, element: &mut Element, name: &Name) -> Result<(), Error>;
+
     /// Append a new value to a element
     ///
     /// Return an error if the element doesn't accept appending
@@ -325,8 +321,8 @@ pub trait SetValue: Sized {
 
 macro_rules! impl_value {
     ($ty:ty, $start:expr, $get_at:path, $set_at:path, $set:path) => {
-        impl GetValue for $ty {
-            fn get_at(element: &Element, index: usize) -> Option<Self> {
+        impl<'e> GetValue<'e> for $ty {
+            fn get_at(element: &'e Element, index: usize) -> Option<Self> {
                 unsafe {
                     let mut tmp = $start;
                     let res = $get_at(element.ptr, &mut tmp as *mut _, index);
@@ -338,6 +334,7 @@ macro_rules! impl_value {
                 }
             }
         }
+
         impl SetValue for $ty {
             fn set_at(self, element: &mut Element, index: usize) -> Result<(), Error> {
                 unsafe {
@@ -363,8 +360,8 @@ macro_rules! impl_value {
         }
     };
     ($ty:ty, $get_at:path, $set_at:path, $set:path, $from_bbg: expr, $to_bbg: expr) => {
-        impl GetValue for $ty {
-            fn get_at(element: &Element, index: usize) -> Option<Self> {
+        impl<'e> GetValue<'e> for $ty {
+            fn get_at(element: &'e Element, index: usize) -> Option<Self> {
                 unsafe {
                     let tmp = ptr::null_mut();
                     let res = $get_at(element.ptr, tmp, index);
@@ -376,6 +373,7 @@ macro_rules! impl_value {
                 }
             }
         }
+
         impl SetValue for $ty {
             fn set_at(self, element: &mut Element, index: usize) -> Result<(), Error> {
                 unsafe {
@@ -454,8 +452,8 @@ impl_value!(
     |rust: Name| rust.0
 );
 
-impl GetValue for String {
-    fn get_at(element: &Element, index: usize) -> Option<Self> {
+impl<'e> GetValue<'e> for String {
+    fn get_at(element: &'e Element, index: usize) -> Option<Self> {
         unsafe {
             let mut tmp = ptr::null();
             let res = blpapi_Element_getValueAsString(element.ptr, &mut tmp as *mut _, index);
@@ -464,6 +462,19 @@ impl GetValue for String {
             } else {
                 None
             }
+        }
+    }
+}
+
+impl<'e> GetValue<'e> for &'e CStr {
+    fn get_at(element: &'e Element, index: usize) -> Option<Self> {
+        let mut tmp = ptr::null();
+        let res = unsafe { blpapi_Element_getValueAsString(element.ptr, &mut tmp, index) };
+        let str = unsafe { CStr::from_ptr(tmp) };
+        if res == 0 {
+            Some(str)
+        } else {
+            None
         }
     }
 }
@@ -501,8 +512,8 @@ impl<'a> SetValue for &'a str {
     }
 }
 
-impl GetValue for Datetime {
-    fn get_at(element: &Element, index: usize) -> Option<Self> {
+impl<'e> GetValue<'e> for Datetime {
+    fn get_at(element: &'e Element, index: usize) -> Option<Self> {
         unsafe {
             let mut tmp = Datetime::default();
             let res = blpapi_Element_getValueAsDatetime(element.ptr, &mut tmp.0, index);
@@ -515,20 +526,20 @@ impl GetValue for Datetime {
     }
 }
 
-impl<T: GetValue> GetValue for Option<T> {
-    fn get_at(element: &Element, index: usize) -> Option<Self> {
+impl<'e, T: GetValue<'e>> GetValue<'e> for Option<T> {
+    fn get_at(element: &'e Element, index: usize) -> Option<Self> {
         T::get_at(element, index).map(Some)
     }
 }
 
-impl<T: GetValue> GetValue for Vec<T> {
-    fn get_at(element: &Element, index: usize) -> Option<Self> {
-        Some(element.values().skip(index).collect())
+impl<'e, T: GetValue<'e>> GetValue<'e> for Vec<T> {
+    fn get_at(element: &'e Element, index: usize) -> Option<Self> {
+        Some(element.values::<T>().skip(index).collect())
     }
 }
 
-impl GetValue for Element {
-    fn get_at(element: &Element, index: usize) -> Option<Self> {
+impl<'e> GetValue<'e> for Element {
+    fn get_at(element: &'e Element, index: usize) -> Option<Self> {
         unsafe {
             let mut ptr = ptr::null_mut();
             let res = blpapi_Element_getValueAsElement(element.ptr, &mut ptr as *mut _, index);
@@ -541,9 +552,9 @@ impl GetValue for Element {
     }
 }
 
-impl<T: GetValue + std::hash::Hash + Eq> GetValue for std::collections::HashSet<T> {
-    fn get_at(element: &Element, index: usize) -> Option<Self> {
-        Some(element.values().skip(index).collect())
+impl<'e, T: GetValue<'e> + std::hash::Hash + Eq> GetValue<'e> for std::collections::HashSet<T> {
+    fn get_at(element: &'e Element, index: usize) -> Option<Self> {
+        Some(element.values::<T>().skip(index).collect())
     }
 }
 
@@ -582,49 +593,48 @@ impl<'a> SetValue for &'a Datetime {
 }
 
 /// An iterator over values
-pub struct Values<'a, V> {
-    element: &'a Element,
+pub struct Values<'e, V> {
+    element: &'e Element,
     i: usize,
     len: usize,
     _phantom: PhantomData<V>,
 }
 
-impl<'a, V: GetValue> Iterator for Values<'a, V> {
+impl<'e, V: GetValue<'e>> Iterator for Values<'e, V> {
     type Item = V;
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len - self.i, Some(self.len - self.i))
-    }
-    fn next(&mut self) -> Option<V> {
+
+    fn next(&mut self) -> Option<Self::Item> {
         if self.i == self.len {
             return None;
         }
-        let v = self.element.get_at(self.i);
+        let v = self.element.get_at::<V>(self.i);
         self.i += 1;
         v
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len - self.i, Some(self.len - self.i))
     }
 }
 
 #[cfg(feature = "dates")]
-impl GetValue for chrono::NaiveDate {
-    fn get_at(element: &Element, index: usize) -> Option<Self> {
-        element.get_at(index).map(|d: Datetime| {
+impl<'e> GetValue<'e> for chrono::NaiveDate {
+    fn get_at(element: &'e Element, index: usize) -> Option<Self> {
+        element.get_at::<Datetime>(index).map(|d: Datetime| {
             chrono::NaiveDate::from_ymd(d.0.year as i32, d.0.month as u32, d.0.day as u32)
         })
     }
 }
 
 /// An iterator over elements
-pub struct Elements<'a> {
-    element: &'a Element,
+pub struct Elements<'e> {
+    element: &'e Element,
     i: usize,
     len: usize,
 }
 
-impl<'a> Iterator for Elements<'a> {
+impl<'e> Iterator for Elements<'e> {
     type Item = Element;
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.len - self.i, Some(self.len - self.i))
-    }
+
     fn next(&mut self) -> Option<Element> {
         if self.i == self.len {
             return None;
@@ -632,5 +642,8 @@ impl<'a> Iterator for Elements<'a> {
         let v = self.element.get_element_at(self.i);
         self.i += 1;
         v
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len - self.i, Some(self.len - self.i))
     }
 }
