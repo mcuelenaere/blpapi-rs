@@ -1,7 +1,7 @@
 use serde::Deserialize;
-use crate::element::{Element, DataType};
+use crate::element::{Element, DataType, Elements};
 use crate::name::Name;
-use serde::de::{Visitor, SeqAccess, DeserializeSeed};
+use serde::de::{Visitor, SeqAccess, DeserializeSeed, MapAccess};
 use std::fmt::{self, Display};
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -20,6 +20,7 @@ pub enum Error {
     UnsupportedType,
     ExpectedArrayOrComplexType,
     ExpectedNull,
+    ExpectedValue,
     BlpApiError(crate::errors::Error),
 }
 
@@ -45,13 +46,14 @@ impl Display for Error {
                 ))),
             Error::UnsupportedType => formatter.write_str("unsupported type"),
             Error::ExpectedNull => formatter.write_str("expected null value"),
+            Error::ExpectedValue => formatter.write_str("expected value in map"),
             Error::ExpectedArrayOrComplexType => formatter.write_str("expected array or complex type"),
             Error::BlpApiError(err) => formatter.write_fmt(format_args!("blpapi error: {}", err)),
         }
     }
 }
 
-pub struct Deserializer {
+pub struct ElementDeserializer {
     input: Element,
     value_index: Option<usize>,
 }
@@ -59,7 +61,7 @@ pub struct Deserializer {
 pub fn from_element<'de, T>(input: Element) -> Result<T>
     where T: Deserialize<'de>
 {
-    let mut deserializer = Deserializer { input, value_index: None };
+    let mut deserializer = ElementDeserializer { input, value_index: None };
     let t = T::deserialize(&mut deserializer)?;
     Ok(t)
 }
@@ -97,7 +99,7 @@ macro_rules! unsupported_type {
     };
 }
 
-impl Deserializer {
+impl ElementDeserializer {
     fn is_null(&self) -> Result<bool> {
         match self.value_index {
             Some(index) => self.input.is_null_value(index).map_err(|err| Error::BlpApiError(err)),
@@ -106,7 +108,7 @@ impl Deserializer {
     }
 }
 
-impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
+impl<'de, 'a> serde::Deserializer<'de> for &'a mut ElementDeserializer {
     type Error = Error;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
@@ -208,7 +210,14 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
         self.deserialize_tuple(len, visitor)
     }
 
-    unsupported_type!(deserialize_map);
+    fn deserialize_map<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+        V: Visitor<'de> {
+        if !self.input.is_complex_type() {
+            return Err(Error::UnsupportedType);
+        }
+
+        visitor.visit_map(ElementsIterator { it: self.input.elements(), current_element: None })
+    }
 
     fn deserialize_struct<V>(self, _: &'static str, fields: &'static [&'static str], visitor: V) -> Result<<V as Visitor<'de>>::Value> where
         V: Visitor<'de> {
@@ -237,6 +246,111 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer {
     }
 }
 
+struct NameDeserializer {
+    input: Name,
+}
+
+impl<'de, 'a> serde::Deserializer<'de> for &'a mut NameDeserializer {
+    type Error = Error;
+
+    unsupported_type!(deserialize_any);
+    unsupported_type!(deserialize_bool);
+    unsupported_type!(deserialize_i8);
+    unsupported_type!(deserialize_i16);
+    unsupported_type!(deserialize_i32);
+    unsupported_type!(deserialize_i64);
+    unsupported_type!(deserialize_u8);
+    unsupported_type!(deserialize_u16);
+    unsupported_type!(deserialize_u32);
+    unsupported_type!(deserialize_u64);
+    unsupported_type!(deserialize_f32);
+    unsupported_type!(deserialize_f64);
+    unsupported_type!(deserialize_char);
+    unsupported_type!(deserialize_bytes);
+    unsupported_type!(deserialize_byte_buf);
+    unsupported_type!(deserialize_option);
+    unsupported_type!(deserialize_unit);
+
+    fn deserialize_str<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+        V: Visitor<'de> {
+        visitor.visit_string(self.input.to_string())
+    }
+
+    fn deserialize_string<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+        V: Visitor<'de> {
+        visitor.visit_string(self.input.to_string())
+    }
+
+    unsupported_type!(deserialize_seq);
+    fn deserialize_unit_struct<V>(self, _: &'static str, _: V) -> Result<<V as Visitor<'de>>::Value> where
+        V: Visitor<'de> {
+        Err(Error::UnsupportedType)
+    }
+    fn deserialize_newtype_struct<V>(self, _: &'static str, _: V) -> Result<<V as Visitor<'de>>::Value> where
+        V: Visitor<'de> {
+        Err(Error::UnsupportedType)
+    }
+    unsupported_type!(deserialize_map);
+    fn deserialize_tuple<V>(self, _: usize, _: V) -> Result<<V as Visitor<'de>>::Value> where
+        V: Visitor<'de> {
+        Err(Error::UnsupportedType)
+    }
+    fn deserialize_tuple_struct<V>(self, _: &'static str, _: usize, _: V) -> Result<<V as Visitor<'de>>::Value> where
+        V: Visitor<'de> {
+        Err(Error::UnsupportedType)
+    }
+    unsupported_type!(deserialize_identifier);
+    unsupported_type!(deserialize_ignored_any);
+    fn deserialize_struct<V>(self, _: &'static str, _: &'static [&'static str], _: V) -> Result<<V as Visitor<'de>>::Value> where
+        V: Visitor<'de> {
+        Err(Error::UnsupportedType)
+    }
+
+    fn deserialize_enum<V>(self, _: &'static str, _: &'static [&'static str], _: V) -> Result<<V as Visitor<'de>>::Value> where
+        V: Visitor<'de> {
+        Err(Error::UnsupportedType)
+    }
+}
+
+struct ElementsIterator<'e> {
+    it: Elements<'e>,
+    current_element: Option<Element>,
+}
+
+impl<'e, 'de> MapAccess<'de> for ElementsIterator<'e> {
+    type Error = Error;
+
+    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<<K as DeserializeSeed<'de>>::Value>> where
+        K: DeserializeSeed<'de> {
+        match self.it.next() {
+            Some(element) => {
+                self.current_element = Some(element.clone());
+                let mut de = NameDeserializer { input: element.name() };
+                seed.deserialize(&mut de).map(Some)
+            },
+            None => {
+                self.current_element = None;
+                Ok(None)
+            },
+        }
+    }
+
+    fn next_value_seed<V>(&mut self, seed: V) -> Result<<V as DeserializeSeed<'de>>::Value> where
+        V: DeserializeSeed<'de> {
+        match self.current_element.as_ref() {
+            Some(element) => {
+                let mut de = ElementDeserializer { input: element.clone(), value_index: None };
+                seed.deserialize(&mut de)
+            },
+            None => Err(Error::ExpectedValue),
+        }
+    }
+
+    fn size_hint(&self) -> Option<usize> {
+        self.it.size_hint().1
+    }
+}
+
 struct FieldBased {
     element: Element,
     // TODO: this should use Name instead
@@ -253,7 +367,7 @@ impl<'de> SeqAccess<'de> for FieldBased {
             Some(field) => {
                 match self.element.get_element(field) {
                     Some(element) => {
-                        let mut de = Deserializer { input: element, value_index: None };
+                        let mut de = ElementDeserializer { input: element, value_index: None };
                         seed.deserialize(&mut de).map(Some)
                     },
                     None => Err(Error::ElementNotFoundAtField(self.element.clone(), Name::new(field))),
@@ -262,10 +376,14 @@ impl<'de> SeqAccess<'de> for FieldBased {
             None => Ok(None),
         }
     }
+
+    fn size_hint(&self) -> Option<usize> {
+        self.fields.size_hint().1
+    }
 }
 
 struct IndexBased<'a> {
-    de: &'a mut Deserializer,
+    de: &'a mut ElementDeserializer,
     indices: std::ops::Range<usize>,
     use_values: bool,
 }
@@ -279,10 +397,10 @@ impl<'de, 'a> SeqAccess<'de> for IndexBased<'a> {
         match self.indices.next() {
             Some(index) => {
                 let mut de = if self.use_values {
-                    Deserializer { input: self.de.input.clone(), value_index: Some(index) }
+                    ElementDeserializer { input: self.de.input.clone(), value_index: Some(index) }
                 } else {
                     match self.de.input.get_element_at(index) {
-                        Some(element) => Deserializer { input: element, value_index: None },
+                        Some(element) => ElementDeserializer { input: element, value_index: None },
                         None => return Err(Error::ElementNotFoundAtIndex(self.de.input.clone(), Some(index))),
                     }
                 };
@@ -290,6 +408,10 @@ impl<'de, 'a> SeqAccess<'de> for IndexBased<'a> {
             },
             None => Ok(None),
         }
+    }
+
+    fn size_hint(&self) -> Option<usize> {
+        self.indices.size_hint().1
     }
 }
 
@@ -300,6 +422,7 @@ mod tests {
     use crate::event::EventType;
     use crate::testutil::EventBuilder;
     use std::result::Result;
+    use std::collections::HashMap;
 
     #[derive(Deserialize, PartialEq, Debug)]
     struct Reason {
@@ -455,6 +578,63 @@ mod tests {
                     }
                 },
             ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_map() -> Result<(), Error> {
+        let msg_contents = r#"
+            {
+                "exceptions": [
+                    {
+                        "fieldId": "field1",
+                        "reason": {
+                            "source":      "TestUtil",
+                           "errorCode":   -1,
+                            "category":    "CATEGORY",
+                            "description": "for testing",
+                            "subcategory": "SUBCATEGORY"
+                        }
+                    }
+                ]
+            }
+        "#;
+
+        let event = EventBuilder::new(EventType::SubscriptionData)?
+            .append_message_from_json(Name::new("SubscriptionStarted"), None, msg_contents)?
+            .build();
+
+        #[derive(Deserialize, PartialEq, Debug)]
+        struct ExceptionWithMap {
+            #[serde(rename="fieldId")]
+            field_id: String,
+            reason: HashMap<String, String>,
+        }
+
+        let element = event.messages().next().unwrap().element();
+        let exception = element
+            .get_element("exceptions").unwrap()
+            .values::<Element>()
+            .map(|value| from_element::<ExceptionWithMap>(value).unwrap())
+            .next().unwrap()
+        ;
+
+        assert_eq!(
+            exception,
+            ExceptionWithMap {
+                field_id: "field1".to_string(),
+                reason: [
+                    ("source", "TestUtil"),
+                    ("errorCode", "-1"),
+                    ("category", "CATEGORY"),
+                    ("description", "for testing"),
+                    ("subcategory", "SUBCATEGORY"),
+                ].iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect::<HashMap<String, String>>(),
+            },
         );
 
         Ok(())
