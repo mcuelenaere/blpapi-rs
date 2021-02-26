@@ -119,27 +119,26 @@ impl<'a> Session<'a> {
     /// process them does not delay a session that receives small
     /// messages and processes each one very quickly then give each
     /// one a separate EventDispatcher.
-    pub fn create(options: SessionOptions, event_handler: Option<impl FnMut(&Event) -> () + Send + 'a>, event_dispatcher: Option<EventDispatcher>) -> Pin<Box<Self>> {
-        let event_dispatcher = event_dispatcher.map_or(ptr::null_mut(), |event_dispatcher| event_dispatcher.0);
+    pub fn create(options: SessionOptions, event_handler: Option<impl FnMut(&Event) -> () + Send + 'a>, event_dispatcher: Option<&EventDispatcher>) -> Pin<Box<Self>> {
         let mut session = Box::pin(Session {
             ptr: ptr::null_mut(),
             event_handler_fn: event_handler.map(|event_handler_fn| Box::new(event_handler_fn) as _)
         });
         session.ptr = unsafe {
-            match session.event_handler_fn.as_ref() {
-                Some(callback_user_data_ref) => {
+            match (session.event_handler_fn.as_ref(), event_dispatcher) {
+                (Some(callback_user_data_ref), Some(event_dispatcher)) => {
                     blpapi_Session_create(
                         options.0,
                         Some(event_handler_callback as EventHandlerCallback),
-                        event_dispatcher,
+                        event_dispatcher.0,
                         std::mem::transmute(callback_user_data_ref)
                     )
                 },
-                None => {
+                _ => {
                     blpapi_Session_create(
                         options.0,
                         None,
-                        event_dispatcher,
+                        ptr::null_mut(),
                         ptr::null_mut(),
                     )
                 }
