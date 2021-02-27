@@ -2,9 +2,10 @@ use crate::correlation_id::CorrelationId;
 use crate::errors::Error;
 use blpapi_sys::*;
 use std::fmt::{Debug, Formatter};
-use std::ffi::CString;
+use std::ffi::{CString, CStr};
 use std::ptr;
 use std::ops::Range;
+use std::os::raw::c_char;
 
 /// Contains a list of subscriptions used when subscribing and
 /// unsubscribing.
@@ -23,8 +24,8 @@ impl SubscriptionList {
     pub fn add(
         &mut self,
         subscription_string: &str,
-        fields: Option<Vec<String>>,
-        options: Option<Vec<String>>,
+        fields: Option<&Vec<String>>,
+        options: Option<&Vec<String>>,
         correlation_id: Option<CorrelationId>
     ) -> Result<(), Error> {
         let subscription_string = CString::new(subscription_string).map_err(|err| Error::StringConversionError(Box::new(err)))?;
@@ -110,6 +111,10 @@ impl SubscriptionList {
     pub fn correlation_ids(&self) -> CorrelationIdsIterator {
         CorrelationIdsIterator { subscription_list: self, indices: 0..self.size() }
     }
+
+    pub fn topic_strings(&self) -> TopicStringIterator {
+        TopicStringIterator { subscription_list: self, indices: 0..self.size() }
+    }
 }
 
 impl Drop for SubscriptionList {
@@ -149,6 +154,24 @@ impl<'a> Iterator for CorrelationIdsIterator<'a> {
             let res = unsafe { blpapi_SubscriptionList_correlationIdAt(self.subscription_list.0, &mut correlation_id.0, index) };
             Error::check(res).unwrap();
             correlation_id
+        })
+    }
+}
+
+pub struct TopicStringIterator<'a> {
+    subscription_list: &'a SubscriptionList,
+    indices: Range<usize>,
+}
+
+impl<'a> Iterator for TopicStringIterator<'a> {
+    type Item = &'a CStr;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.indices.next().map(|index| {
+            let mut topic_string: *const c_char = ptr::null();
+            let res = unsafe { blpapi_SubscriptionList_topicStringAt(self.subscription_list.0, &mut topic_string, index) };
+            Error::check(res).unwrap();
+            unsafe { CStr::from_ptr(topic_string) }
         })
     }
 }
