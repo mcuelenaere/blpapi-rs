@@ -312,6 +312,74 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut NameDeserializer {
     }
 }
 
+struct NoneDeserializer<F: Fn() -> Error> {
+    generate_error: F,
+}
+
+macro_rules! visit_none {
+    ($deserialize:ident) => {
+        fn $deserialize<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+            V: Visitor<'de> {
+            visitor.visit_none::<Error>().map_err(|_| (self.generate_error)())
+        }
+    };
+}
+
+impl<'de, 'a, F> serde::Deserializer<'de> for &'a mut NoneDeserializer<F>
+    where F: Fn() -> Error
+{
+    type Error = Error;
+
+    visit_none!(deserialize_any);
+    visit_none!(deserialize_bool);
+    visit_none!(deserialize_i8);
+    visit_none!(deserialize_i16);
+    visit_none!(deserialize_i32);
+    visit_none!(deserialize_i64);
+    visit_none!(deserialize_u8);
+    visit_none!(deserialize_u16);
+    visit_none!(deserialize_u32);
+    visit_none!(deserialize_u64);
+    visit_none!(deserialize_f32);
+    visit_none!(deserialize_f64);
+    visit_none!(deserialize_char);
+    visit_none!(deserialize_bytes);
+    visit_none!(deserialize_byte_buf);
+    visit_none!(deserialize_option);
+    visit_none!(deserialize_unit);
+    visit_none!(deserialize_str);
+    visit_none!(deserialize_string);
+    visit_none!(deserialize_seq);
+    fn deserialize_unit_struct<V>(self, _: &'static str, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+        V: Visitor<'de> {
+        visitor.visit_none::<Error>().map_err(|_| (self.generate_error)())
+    }
+    fn deserialize_newtype_struct<V>(self, _: &'static str, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+        V: Visitor<'de> {
+        visitor.visit_none::<Error>().map_err(|_| (self.generate_error)())
+    }
+    visit_none!(deserialize_map);
+    fn deserialize_tuple<V>(self, _: usize, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+        V: Visitor<'de> {
+        visitor.visit_none::<Error>().map_err(|_| (self.generate_error)())
+    }
+    fn deserialize_tuple_struct<V>(self, _: &'static str, _: usize, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+        V: Visitor<'de> {
+        visitor.visit_none::<Error>().map_err(|_| (self.generate_error)())
+    }
+    visit_none!(deserialize_identifier);
+    visit_none!(deserialize_ignored_any);
+    fn deserialize_struct<V>(self, _: &'static str, _: &'static [&'static str], visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+        V: Visitor<'de> {
+        visitor.visit_none::<Error>().map_err(|_| (self.generate_error)())
+    }
+
+    fn deserialize_enum<V>(self, _: &'static str, _: &'static [&'static str], visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+        V: Visitor<'de> {
+        visitor.visit_none::<Error>().map_err(|_| (self.generate_error)())
+    }
+}
+
 struct ElementsIterator<'e> {
     it: Elements<'e>,
     current_element: Option<Element>,
@@ -370,7 +438,12 @@ impl<'de> SeqAccess<'de> for FieldBased {
                         let mut de = ElementDeserializer { input: element, value_index: None };
                         seed.deserialize(&mut de).map(Some)
                     },
-                    None => Err(Error::ElementNotFoundAtField(self.element.clone(), Name::new(field))),
+                    None => {
+                        let mut de = NoneDeserializer {
+                            generate_error: || Error::ElementNotFoundAtField(self.element.clone(), Name::new(field)),
+                        };
+                        seed.deserialize(&mut de).map(Some)
+                    },
                 }
             },
             None => Ok(None),
@@ -396,15 +469,23 @@ impl<'de, 'a> SeqAccess<'de> for IndexBased<'a> {
     {
         match self.indices.next() {
             Some(index) => {
-                let mut de = if self.use_values {
-                    ElementDeserializer { input: self.de.input.clone(), value_index: Some(index) }
+                if self.use_values {
+                    let mut de = ElementDeserializer { input: self.de.input.clone(), value_index: Some(index) };
+                    seed.deserialize(&mut de).map(Some)
                 } else {
                     match self.de.input.get_element_at(index) {
-                        Some(element) => ElementDeserializer { input: element, value_index: None },
-                        None => return Err(Error::ElementNotFoundAtIndex(self.de.input.clone(), Some(index))),
+                        Some(element) => {
+                            let mut de = ElementDeserializer { input: element, value_index: None };
+                            seed.deserialize(&mut de).map(Some)
+                        },
+                        None => {
+                            let mut de = NoneDeserializer {
+                                generate_error: || Error::ElementNotFoundAtIndex(self.de.input.clone(), Some(index)),
+                            };
+                            seed.deserialize(&mut de).map(Some)
+                        },
                     }
-                };
-                seed.deserialize(&mut de).map(Some)
+                }
             },
             None => Ok(None),
         }
