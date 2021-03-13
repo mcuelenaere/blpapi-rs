@@ -53,6 +53,57 @@ impl Display for Error {
     }
 }
 
+#[derive(Copy, PartialEq, PartialOrd, Eq, Ord, Debug, Hash)]
+pub enum FieldValue<T>
+{
+    /// Field is present, containing value `T`
+    Present(T),
+    /// Field is missing
+    Missing,
+}
+
+impl<T> Default for FieldValue<T> {
+    fn default() -> Self {
+        FieldValue::Missing
+    }
+}
+
+impl<T: Clone> Clone for FieldValue<T> {
+    fn clone(&self) -> Self {
+        match self {
+            FieldValue::Present(x) => FieldValue::Present(x.clone()),
+            FieldValue::Missing => FieldValue::Missing,
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        match (self, source) {
+            (FieldValue::Present(to), FieldValue::Present(from)) => to.clone_from(from),
+            (to, from) => *to = from.clone(),
+        }
+    }
+}
+
+impl<'de, T: Deserialize<'de>> serde::Deserialize<'de> for FieldValue<T> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+        where D: serde::Deserializer<'de>
+    {
+        match T::deserialize(deserializer) {
+            Ok(value) => Ok(FieldValue::Present(value)),
+            //Err(Error::ElementNotFoundAtField(_, _)) => Ok(FieldValue::Missing),
+            Err(error) => {
+                // we have to resort to this hack until specialization lands in stable
+                let formatted_error = format!("{}", error);
+                if formatted_error.starts_with("no element found in ") && formatted_error.contains(" with field ") {
+                    Ok(FieldValue::Missing)
+                } else {
+                    Err(error)
+                }
+            },
+        }
+    }
+}
+
 pub struct ElementDeserializer {
     input: Element,
     value_index: Option<usize>,
@@ -114,7 +165,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut ElementDeserializer {
     fn deserialize_any<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
         V: Visitor<'de> {
         if self.is_null()? {
-            return self.deserialize_unit(visitor);
+            return visitor.visit_none();
         }
 
         match self.input.data_type() {
@@ -312,71 +363,78 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut NameDeserializer {
     }
 }
 
-struct NoneDeserializer<F: Fn() -> Error> {
+struct ErrorDeserializer<F: Fn() -> Error> {
     generate_error: F,
 }
 
-macro_rules! visit_none {
+macro_rules! visit_err {
     ($deserialize:ident) => {
-        fn $deserialize<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+        fn $deserialize<V>(self, _: V) -> Result<<V as Visitor<'de>>::Value> where
             V: Visitor<'de> {
-            visitor.visit_none::<Error>().map_err(|_| (self.generate_error)())
+            let err = (self.generate_error)();
+            Err(err)
         }
     };
 }
 
-impl<'de, 'a, F> serde::Deserializer<'de> for &'a mut NoneDeserializer<F>
+impl<'de, 'a, F> serde::Deserializer<'de> for &'a mut ErrorDeserializer<F>
     where F: Fn() -> Error
 {
     type Error = Error;
 
-    visit_none!(deserialize_any);
-    visit_none!(deserialize_bool);
-    visit_none!(deserialize_i8);
-    visit_none!(deserialize_i16);
-    visit_none!(deserialize_i32);
-    visit_none!(deserialize_i64);
-    visit_none!(deserialize_u8);
-    visit_none!(deserialize_u16);
-    visit_none!(deserialize_u32);
-    visit_none!(deserialize_u64);
-    visit_none!(deserialize_f32);
-    visit_none!(deserialize_f64);
-    visit_none!(deserialize_char);
-    visit_none!(deserialize_bytes);
-    visit_none!(deserialize_byte_buf);
-    visit_none!(deserialize_option);
-    visit_none!(deserialize_unit);
-    visit_none!(deserialize_str);
-    visit_none!(deserialize_string);
-    visit_none!(deserialize_seq);
-    fn deserialize_unit_struct<V>(self, _: &'static str, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    visit_err!(deserialize_any);
+    visit_err!(deserialize_bool);
+    visit_err!(deserialize_i8);
+    visit_err!(deserialize_i16);
+    visit_err!(deserialize_i32);
+    visit_err!(deserialize_i64);
+    visit_err!(deserialize_u8);
+    visit_err!(deserialize_u16);
+    visit_err!(deserialize_u32);
+    visit_err!(deserialize_u64);
+    visit_err!(deserialize_f32);
+    visit_err!(deserialize_f64);
+    visit_err!(deserialize_char);
+    visit_err!(deserialize_bytes);
+    visit_err!(deserialize_byte_buf);
+    visit_err!(deserialize_option);
+    visit_err!(deserialize_unit);
+    visit_err!(deserialize_str);
+    visit_err!(deserialize_string);
+    visit_err!(deserialize_seq);
+    fn deserialize_unit_struct<V>(self, _: &'static str, _: V) -> Result<<V as Visitor<'de>>::Value> where
         V: Visitor<'de> {
-        visitor.visit_none::<Error>().map_err(|_| (self.generate_error)())
+        let err = (self.generate_error)();
+        Err(err)
     }
-    fn deserialize_newtype_struct<V>(self, _: &'static str, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    fn deserialize_newtype_struct<V>(self, _: &'static str, _: V) -> Result<<V as Visitor<'de>>::Value> where
         V: Visitor<'de> {
-        visitor.visit_none::<Error>().map_err(|_| (self.generate_error)())
+        let err = (self.generate_error)();
+        Err(err)
     }
-    visit_none!(deserialize_map);
-    fn deserialize_tuple<V>(self, _: usize, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    visit_err!(deserialize_map);
+    fn deserialize_tuple<V>(self, _: usize, _: V) -> Result<<V as Visitor<'de>>::Value> where
         V: Visitor<'de> {
-        visitor.visit_none::<Error>().map_err(|_| (self.generate_error)())
+        let err = (self.generate_error)();
+        Err(err)
     }
-    fn deserialize_tuple_struct<V>(self, _: &'static str, _: usize, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    fn deserialize_tuple_struct<V>(self, _: &'static str, _: usize, _: V) -> Result<<V as Visitor<'de>>::Value> where
         V: Visitor<'de> {
-        visitor.visit_none::<Error>().map_err(|_| (self.generate_error)())
+        let err = (self.generate_error)();
+        Err(err)
     }
-    visit_none!(deserialize_identifier);
-    visit_none!(deserialize_ignored_any);
-    fn deserialize_struct<V>(self, _: &'static str, _: &'static [&'static str], visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    visit_err!(deserialize_identifier);
+    visit_err!(deserialize_ignored_any);
+    fn deserialize_struct<V>(self, _: &'static str, _: &'static [&'static str], _: V) -> Result<<V as Visitor<'de>>::Value> where
         V: Visitor<'de> {
-        visitor.visit_none::<Error>().map_err(|_| (self.generate_error)())
+        let err = (self.generate_error)();
+        Err(err)
     }
 
-    fn deserialize_enum<V>(self, _: &'static str, _: &'static [&'static str], visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    fn deserialize_enum<V>(self, _: &'static str, _: &'static [&'static str], _: V) -> Result<<V as Visitor<'de>>::Value> where
         V: Visitor<'de> {
-        visitor.visit_none::<Error>().map_err(|_| (self.generate_error)())
+        let err = (self.generate_error)();
+        Err(err)
     }
 }
 
@@ -433,13 +491,19 @@ impl<'de> SeqAccess<'de> for FieldBased {
     {
         match self.fields.next() {
             Some(field) => {
-                match self.element.get_element(field) {
+                let element = if self.element.has_element(field, false) {
+                    self.element.get_element(field)
+                } else {
+                    None
+                };
+
+                match element {
                     Some(element) => {
                         let mut de = ElementDeserializer { input: element, value_index: None };
                         seed.deserialize(&mut de).map(Some)
                     },
                     None => {
-                        let mut de = NoneDeserializer {
+                        let mut de = ErrorDeserializer {
                             generate_error: || Error::ElementNotFoundAtField(self.element.clone(), Name::new(field)),
                         };
                         seed.deserialize(&mut de).map(Some)
@@ -479,7 +543,7 @@ impl<'de, 'a> SeqAccess<'de> for IndexBased<'a> {
                             seed.deserialize(&mut de).map(Some)
                         },
                         None => {
-                            let mut de = NoneDeserializer {
+                            let mut de = ErrorDeserializer {
                                 generate_error: || Error::ElementNotFoundAtIndex(self.de.input.clone(), Some(index)),
                             };
                             seed.deserialize(&mut de).map(Some)
@@ -500,7 +564,7 @@ impl<'de, 'a> SeqAccess<'de> for IndexBased<'a> {
 mod tests {
     use super::*;
     use crate::errors::Error;
-    use crate::event::EventType;
+    use crate::event::{Event, EventType};
     use crate::testutil::EventBuilder;
     use std::result::Result;
     use std::collections::HashMap;
@@ -716,6 +780,55 @@ mod tests {
                     .map(|(k, v)| (k.to_string(), v.to_string()))
                     .collect::<HashMap<String, String>>(),
             },
+        );
+
+        Ok(())
+    }
+
+    fn build_subscription_data_event(msg_contents: &str) -> Result<Event, Error> {
+        let event = EventBuilder::new(EventType::SubscriptionData)?
+            .append_message_from_json(Name::new("SubscriptionStarted"), None, msg_contents)?
+            .build();
+        Ok(event)
+    }
+
+    #[test]
+    fn test_missing_fields() -> Result<(), Error> {
+        #[derive(Deserialize, PartialEq, Debug)]
+        struct SubscriptionStarted {
+            exceptions: FieldValue<Vec<Exception>>,
+            #[serde(rename="resubscriptionId")]
+            resubscription_id: FieldValue<i32>,
+            #[serde(rename="streamIds")]
+            stream_ids: FieldValue<Vec<String>>,
+            #[serde(rename="receivedFrom")]
+            received_from: FieldValue<Option<ReceivedFrom>>,
+            reason: FieldValue<String>,
+        }
+
+        let event = build_subscription_data_event(r#"
+            {
+                "resubscriptionId": 123,
+                "streamIds": [
+                    "123",
+                    "456"
+                ],
+                "reason":      "TestUtil"
+            }
+        "#)?;
+
+        let element = event.messages().next().unwrap().element();
+        let msg = from_element::<SubscriptionStarted>(element).unwrap();
+
+        assert_eq!(
+            msg,
+            SubscriptionStarted {
+                exceptions: FieldValue::Missing,
+                resubscription_id: FieldValue::Present(123),
+                stream_ids: FieldValue::Present(vec!["123".to_string(), "456".to_string()]),
+                received_from: FieldValue::Present(None),
+                reason: FieldValue::Present("TestUtil".to_string()),
+            }
         );
 
         Ok(())
