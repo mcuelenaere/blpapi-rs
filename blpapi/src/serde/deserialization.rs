@@ -84,6 +84,22 @@ impl<T: Clone> Clone for FieldValue<T> {
     }
 }
 
+impl<T> Into<Option<T>> for FieldValue<T> {
+    fn into(self) -> Option<T> {
+        match self {
+            FieldValue::Present(inner) => Some(inner),
+            FieldValue::Missing => None,
+        }
+    }
+}
+
+impl<T> FieldValue<Option<T>> {
+    pub fn flatten(self) -> Option<T> {
+        let unflattened: Option<Option<T>> = self.into();
+        unflattened.flatten()
+    }
+}
+
 impl<'de, T: Deserialize<'de>> serde::Deserialize<'de> for FieldValue<T> {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
         where D: serde::Deserializer<'de>
