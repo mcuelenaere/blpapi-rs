@@ -118,34 +118,37 @@ pub fn from_element<'de, T>(input: Element) -> Result<T>
 }
 
 macro_rules! impl_deserialize {
-    ($deserialize:ident, $visit:ident, $blapi_type:ty) => {
-        fn $deserialize<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    ($deserialize:ident($_self:ident) => Err($err:expr)) => {
+        fn $deserialize<V>($_self, _: V) -> Result<<V as Visitor<'de>>::Value> where
+            V: Visitor<'de> {
+            Err($err)
+        }
+    };
+    ($deserialize:ident($_self:ident, $($arg_type:ty),+) => Err($err:expr)) => {
+        fn $deserialize<V>($_self, $(_: $arg_type),+, _: V) -> Result<<V as Visitor<'de>>::Value> where
+            V: Visitor<'de> {
+            Err($err)
+        }
+    };
+    ($deserialize:ident($_self:ident) => $visit:ident($blapi_type:ty)) => {
+        fn $deserialize<V>($_self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
             V: Visitor<'de> {
             visitor.$visit(
-                self.input
-                    .get_at::<$blapi_type>(self.value_index.unwrap_or(0))
-                    .ok_or(Error::ElementNotFoundAtIndex(self.input.clone(), self.value_index))?
+                $_self.input
+                    .get_at::<$blapi_type>($_self.value_index.unwrap_or(0))
+                    .ok_or(Error::ElementNotFoundAtIndex($_self.input.clone(), $_self.value_index))?
             )
         }
     };
-    ($deserialize:ident, $visit:ident, $blapi_type:ty, $dest_type:ty) => {
-        fn $deserialize<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    ($deserialize:ident($_self:ident) => $visit:ident($blapi_type:ty as $dest_type:ty)) => {
+        fn $deserialize<V>($_self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
             V: Visitor<'de> {
             visitor.$visit(
-                self.input
-                    .get_at::<$blapi_type>(self.value_index.unwrap_or(0))
-                    .ok_or(Error::ElementNotFoundAtIndex(self.input.clone(), self.value_index))?
+                $_self.input
+                    .get_at::<$blapi_type>($_self.value_index.unwrap_or(0))
+                    .ok_or(Error::ElementNotFoundAtIndex($_self.input.clone(), $_self.value_index))?
                 as $dest_type
             )
-        }
-    };
-}
-
-macro_rules! unsupported_type {
-    ($deserialize:ident) => {
-        fn $deserialize<V>(self, _: V) -> Result<<V as Visitor<'de>>::Value> where
-            V: Visitor<'de> {
-            Err(Error::UnsupportedType)
         }
     };
 }
@@ -182,27 +185,27 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut ElementDeserializer {
         }
     }
 
-    impl_deserialize!(deserialize_i8, visit_i8, i8);
-    unsupported_type!(deserialize_i16);
-    impl_deserialize!(deserialize_i32, visit_i32, i32);
-    impl_deserialize!(deserialize_i64, visit_i64, i64);
+    impl_deserialize!(deserialize_i8(self) => visit_i8(i8));
+    impl_deserialize!(deserialize_i16(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_i32(self) => visit_i32(i32));
+    impl_deserialize!(deserialize_i64(self) => visit_i64(i64));
 
-    impl_deserialize!(deserialize_u8, visit_u8, i8, u8);
-    unsupported_type!(deserialize_u16);
-    impl_deserialize!(deserialize_u32, visit_u32, i32, u32);
-    impl_deserialize!(deserialize_u64, visit_u64, i64, u64);
+    impl_deserialize!(deserialize_u8(self) => visit_u8(i8 as u8));
+    impl_deserialize!(deserialize_u16(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_u32(self) => visit_u32(i32 as u32));
+    impl_deserialize!(deserialize_u64(self) => visit_u64(i64 as u64));
 
-    impl_deserialize!(deserialize_f32, visit_f32, f32);
-    impl_deserialize!(deserialize_f64, visit_f64, f64);
+    impl_deserialize!(deserialize_f32(self) => visit_f32(f32));
+    impl_deserialize!(deserialize_f64(self) => visit_f64(f64));
 
-    impl_deserialize!(deserialize_bool, visit_bool, bool);
-//impl_deserialize!(deserialize_char, visit_char, i8, char);
-    unsupported_type!(deserialize_char);
-    impl_deserialize!(deserialize_str, visit_string, String);
-    impl_deserialize!(deserialize_string, visit_string, String);
+    impl_deserialize!(deserialize_bool(self) => visit_bool(bool));
+//impl_deserialize!(deserialize_char(self) => visit_char(i8 as char);
+    impl_deserialize!(deserialize_char(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_str(self) => visit_string(String));
+    impl_deserialize!(deserialize_string(self) => visit_string(String));
 
-    unsupported_type!(deserialize_bytes);
-    unsupported_type!(deserialize_byte_buf);
+    impl_deserialize!(deserialize_bytes(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_byte_buf(self) => Err(Error::UnsupportedType));
 
     fn deserialize_option<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
         V: Visitor<'de> {
@@ -304,23 +307,23 @@ struct NameDeserializer {
 impl<'de, 'a> serde::Deserializer<'de> for &'a mut NameDeserializer {
     type Error = Error;
 
-    unsupported_type!(deserialize_any);
-    unsupported_type!(deserialize_bool);
-    unsupported_type!(deserialize_i8);
-    unsupported_type!(deserialize_i16);
-    unsupported_type!(deserialize_i32);
-    unsupported_type!(deserialize_i64);
-    unsupported_type!(deserialize_u8);
-    unsupported_type!(deserialize_u16);
-    unsupported_type!(deserialize_u32);
-    unsupported_type!(deserialize_u64);
-    unsupported_type!(deserialize_f32);
-    unsupported_type!(deserialize_f64);
-    unsupported_type!(deserialize_char);
-    unsupported_type!(deserialize_bytes);
-    unsupported_type!(deserialize_byte_buf);
-    unsupported_type!(deserialize_option);
-    unsupported_type!(deserialize_unit);
+    impl_deserialize!(deserialize_any(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_bool(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_i8(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_i16(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_i32(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_i64(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_u8(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_u16(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_u32(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_u64(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_f32(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_f64(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_char(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_bytes(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_byte_buf(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_option(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_unit(self) => Err(Error::UnsupportedType));
 
     fn deserialize_str<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
         V: Visitor<'de> {
@@ -332,49 +335,28 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut NameDeserializer {
         visitor.visit_string(self.input.to_string())
     }
 
-    unsupported_type!(deserialize_seq);
-    fn deserialize_unit_struct<V>(self, _: &'static str, _: V) -> Result<<V as Visitor<'de>>::Value> where
-        V: Visitor<'de> {
-        Err(Error::UnsupportedType)
-    }
-    fn deserialize_newtype_struct<V>(self, _: &'static str, _: V) -> Result<<V as Visitor<'de>>::Value> where
-        V: Visitor<'de> {
-        Err(Error::UnsupportedType)
-    }
-    unsupported_type!(deserialize_map);
-    fn deserialize_tuple<V>(self, _: usize, _: V) -> Result<<V as Visitor<'de>>::Value> where
-        V: Visitor<'de> {
-        Err(Error::UnsupportedType)
-    }
-    fn deserialize_tuple_struct<V>(self, _: &'static str, _: usize, _: V) -> Result<<V as Visitor<'de>>::Value> where
-        V: Visitor<'de> {
-        Err(Error::UnsupportedType)
-    }
-    unsupported_type!(deserialize_identifier);
-    unsupported_type!(deserialize_ignored_any);
-    fn deserialize_struct<V>(self, _: &'static str, _: &'static [&'static str], _: V) -> Result<<V as Visitor<'de>>::Value> where
-        V: Visitor<'de> {
-        Err(Error::UnsupportedType)
-    }
-
-    fn deserialize_enum<V>(self, _: &'static str, _: &'static [&'static str], _: V) -> Result<<V as Visitor<'de>>::Value> where
-        V: Visitor<'de> {
-        Err(Error::UnsupportedType)
-    }
+    impl_deserialize!(deserialize_seq(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_unit_struct(self, &'static str) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_newtype_struct(self, &'static str) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_map(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_tuple(self, usize) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_tuple_struct(self, &'static str, usize) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_identifier(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_ignored_any(self) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_struct(self, &'static str, &'static [&'static str]) => Err(Error::UnsupportedType));
+    impl_deserialize!(deserialize_enum(self, &'static str, &'static [&'static str]) => Err(Error::UnsupportedType));
 }
 
 struct ErrorDeserializer<F: Fn() -> Error> {
-    generate_error: F,
+    error_generator_fn: F,
 }
 
-macro_rules! visit_err {
-    ($deserialize:ident) => {
-        fn $deserialize<V>(self, _: V) -> Result<<V as Visitor<'de>>::Value> where
-            V: Visitor<'de> {
-            let err = (self.generate_error)();
-            Err(err)
-        }
-    };
+impl<F: Fn() -> Error> ErrorDeserializer<F>
+{
+    fn generate_error(&self) -> Error {
+        let f = &self.error_generator_fn;
+        f()
+    }
 }
 
 impl<'de, 'a, F> serde::Deserializer<'de> for &'a mut ErrorDeserializer<F>
@@ -382,60 +364,35 @@ impl<'de, 'a, F> serde::Deserializer<'de> for &'a mut ErrorDeserializer<F>
 {
     type Error = Error;
 
-    visit_err!(deserialize_any);
-    visit_err!(deserialize_bool);
-    visit_err!(deserialize_i8);
-    visit_err!(deserialize_i16);
-    visit_err!(deserialize_i32);
-    visit_err!(deserialize_i64);
-    visit_err!(deserialize_u8);
-    visit_err!(deserialize_u16);
-    visit_err!(deserialize_u32);
-    visit_err!(deserialize_u64);
-    visit_err!(deserialize_f32);
-    visit_err!(deserialize_f64);
-    visit_err!(deserialize_char);
-    visit_err!(deserialize_bytes);
-    visit_err!(deserialize_byte_buf);
-    visit_err!(deserialize_option);
-    visit_err!(deserialize_unit);
-    visit_err!(deserialize_str);
-    visit_err!(deserialize_string);
-    visit_err!(deserialize_seq);
-    fn deserialize_unit_struct<V>(self, _: &'static str, _: V) -> Result<<V as Visitor<'de>>::Value> where
-        V: Visitor<'de> {
-        let err = (self.generate_error)();
-        Err(err)
-    }
-    fn deserialize_newtype_struct<V>(self, _: &'static str, _: V) -> Result<<V as Visitor<'de>>::Value> where
-        V: Visitor<'de> {
-        let err = (self.generate_error)();
-        Err(err)
-    }
-    visit_err!(deserialize_map);
-    fn deserialize_tuple<V>(self, _: usize, _: V) -> Result<<V as Visitor<'de>>::Value> where
-        V: Visitor<'de> {
-        let err = (self.generate_error)();
-        Err(err)
-    }
-    fn deserialize_tuple_struct<V>(self, _: &'static str, _: usize, _: V) -> Result<<V as Visitor<'de>>::Value> where
-        V: Visitor<'de> {
-        let err = (self.generate_error)();
-        Err(err)
-    }
-    visit_err!(deserialize_identifier);
-    visit_err!(deserialize_ignored_any);
-    fn deserialize_struct<V>(self, _: &'static str, _: &'static [&'static str], _: V) -> Result<<V as Visitor<'de>>::Value> where
-        V: Visitor<'de> {
-        let err = (self.generate_error)();
-        Err(err)
-    }
-
-    fn deserialize_enum<V>(self, _: &'static str, _: &'static [&'static str], _: V) -> Result<<V as Visitor<'de>>::Value> where
-        V: Visitor<'de> {
-        let err = (self.generate_error)();
-        Err(err)
-    }
+    impl_deserialize!(deserialize_any(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_bool(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_i8(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_i16(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_i32(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_i64(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_u8(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_u16(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_u32(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_u64(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_f32(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_f64(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_char(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_bytes(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_byte_buf(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_option(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_unit(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_str(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_string(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_seq(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_unit_struct(self, &'static str) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_newtype_struct(self, &'static str) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_map(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_tuple(self, usize) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_tuple_struct(self, &'static str, usize) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_identifier(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_ignored_any(self) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_struct(self, &'static str, &'static [&'static str]) => Err(self.generate_error()));
+    impl_deserialize!(deserialize_enum(self, &'static str, &'static [&'static str]) => Err(self.generate_error()));
 }
 
 struct ElementsIterator<'e> {
@@ -504,7 +461,7 @@ impl<'de> SeqAccess<'de> for FieldBased {
                     },
                     None => {
                         let mut de = ErrorDeserializer {
-                            generate_error: || Error::ElementNotFoundAtField(self.element.clone(), Name::new(field)),
+                            error_generator_fn: || Error::ElementNotFoundAtField(self.element.clone(), Name::new(field)),
                         };
                         seed.deserialize(&mut de).map(Some)
                     },
@@ -544,7 +501,7 @@ impl<'de, 'a> SeqAccess<'de> for IndexBased<'a> {
                         },
                         None => {
                             let mut de = ErrorDeserializer {
-                                generate_error: || Error::ElementNotFoundAtIndex(self.de.input.clone(), Some(index)),
+                                error_generator_fn: || Error::ElementNotFoundAtIndex(self.de.input.clone(), Some(index)),
                             };
                             seed.deserialize(&mut de).map(Some)
                         },
