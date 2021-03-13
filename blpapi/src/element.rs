@@ -104,16 +104,24 @@ impl Element {
     }
 
     /// Has element
-    pub fn has_element(&self, name: &str) -> bool {
+    pub fn has_element(&self, name: &str, exclude_null_elements: bool) -> bool {
         let name = CString::new(name).unwrap();
         let named = ptr::null();
-        unsafe { blpapi_Element_hasElement(self.ptr, name.as_ptr(), named) != 0 }
+        if exclude_null_elements {
+            unsafe { blpapi_Element_hasElementEx(self.ptr, name.as_ptr(), named, exclude_null_elements as i32, 0) != 0 }
+        } else {
+            unsafe { blpapi_Element_hasElement(self.ptr, name.as_ptr(), named) != 0 }
+        }
     }
 
     /// Has element
-    pub fn has_named_element(&self, named: &Name) -> bool {
+    pub fn has_named_element(&self, named: &Name, exclude_null_elements: bool) -> bool {
         let name = ptr::null();
-        unsafe { blpapi_Element_hasElement(self.ptr, name, named.0) != 0 }
+        if exclude_null_elements {
+            unsafe { blpapi_Element_hasElementEx(self.ptr, name, named.0, exclude_null_elements as i32, 0) != 0 }
+        } else {
+            unsafe { blpapi_Element_hasElement(self.ptr, name, named.0) != 0 }
+        }
     }
 
     /// Number of values
