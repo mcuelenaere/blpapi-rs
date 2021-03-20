@@ -1,10 +1,10 @@
 use blpapi_sys::*;
 use std::ffi::{CStr, CString};
 use std::cmp::Ordering;
-use std::ops::Deref;
 use std::hash::{Hash, Hasher};
 use std::string::ToString;
 use std::fmt::Debug;
+use std::convert::TryInto;
 
 // NOTE: blpapi_Name_duplicate() and blpapi_Name_destroy() are no-ops, so we can safely
 // implement Copy.
@@ -44,18 +44,18 @@ impl Name {
     pub fn len(&self) -> usize {
         unsafe { blpapi_Name_length(self.0) }
     }
-}
 
-impl Deref for Name {
-    type Target = CStr;
-
-    fn deref(&self) -> &Self::Target {
+    pub fn to_cstr(&self) -> &CStr {
         unsafe {
             let ptr = blpapi_Name_string(self.0);
             let len = blpapi_Name_length(self.0);
             let slice = std::slice::from_raw_parts(ptr as *const u8, len + 1);
             CStr::from_bytes_with_nul_unchecked(slice)
         }
+    }
+
+    pub fn to_string_lossy(&self) -> String {
+        self.to_cstr().to_string_lossy().to_string()
     }
 }
 
@@ -94,15 +94,17 @@ impl Hash for Name {
     }
 }
 
-impl ToString for Name {
-    fn to_string(&self) -> String {
-        self.to_string_lossy().into_owned()
+impl TryInto<String> for Name {
+    type Error = std::str::Utf8Error;
+
+    fn try_into(self) -> Result<String, Self::Error> {
+        self.to_cstr().to_str().map(|s| s.to_string())
     }
 }
 
 impl Debug for Name {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Name[{}]", self.to_string())
+        write!(f, "Name[{}]", self.to_string_lossy())
     }
 }
 

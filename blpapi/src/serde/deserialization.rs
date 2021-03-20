@@ -3,6 +3,7 @@ use crate::element::{Element, DataType, Elements};
 use crate::name::Name;
 use serde::de::{Visitor, SeqAccess, DeserializeSeed, MapAccess};
 use std::fmt::{self, Display};
+use std::str::Utf8Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -21,6 +22,7 @@ pub enum Error {
     ExpectedArrayOrComplexType,
     ExpectedNull,
     ExpectedValue,
+    ExpectedValidString(Utf8Error),
     BlpApiError(crate::errors::Error),
 }
 
@@ -48,6 +50,7 @@ impl Display for Error {
             Error::ExpectedNull => formatter.write_str("expected null value"),
             Error::ExpectedValue => formatter.write_str("expected value in map"),
             Error::ExpectedArrayOrComplexType => formatter.write_str("expected array or complex type"),
+            Error::ExpectedValidString(err) => formatter.write_fmt(format_args!("expected valid string: {}", err)),
             Error::BlpApiError(err) => formatter.write_fmt(format_args!("blpapi error: {}", err)),
         }
     }
@@ -341,14 +344,25 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut NameDeserializer {
     impl_deserialize!(deserialize_option(self) => Err(Error::UnsupportedType));
     impl_deserialize!(deserialize_unit(self) => Err(Error::UnsupportedType));
 
-    fn deserialize_str<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    fn deserialize_str<V>(self, visitor: V) -> Result<V::Value> where
         V: Visitor<'de> {
-        visitor.visit_string(self.input.to_string())
+        visitor.visit_str(
+            self.input
+                .to_cstr()
+                .to_str()
+                .map_err(|err| Error::ExpectedValidString(err))?
+        )
     }
 
-    fn deserialize_string<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    fn deserialize_string<V>(self, visitor: V) -> Result<V::Value> where
         V: Visitor<'de> {
-        visitor.visit_string(self.input.to_string())
+        visitor.visit_string(
+            self.input
+                .to_cstr()
+                .to_str()
+                .map(|s| s.to_string())
+                .map_err(|err| Error::ExpectedValidString(err))?
+        )
     }
 
     impl_deserialize!(deserialize_seq(self) => Err(Error::UnsupportedType));

@@ -89,7 +89,7 @@ impl Element<'_> {
 
     /// name
     pub fn string_name(&self) -> String {
-        self.name().to_string_lossy().into_owned()
+        self.name().to_string_lossy()
     }
 
     /// name
