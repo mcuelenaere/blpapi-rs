@@ -9,9 +9,6 @@ use std::convert::TryInto;
 // NOTE: blpapi_Name_duplicate() and blpapi_Name_destroy() are no-ops, so we can safely
 // implement Copy.
 
-// NOTE: blpapi_Name_duplicate() and blpapi_Name_destroy() are no-ops, so we can safely
-// implement Copy.
-
 /// A `Name`
 #[derive(Copy, Clone)]
 pub struct Name(pub(crate) *mut blpapi_Name_t);
