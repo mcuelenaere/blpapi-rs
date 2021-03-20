@@ -15,8 +15,8 @@ pub enum Error {
     // field is missing.
     Message(String),
 
-    ElementNotFoundAtIndex(Element, Option<usize>),
-    ElementNotFoundAtField(Element, Name),
+    ElementNotFoundAtIndex(String, Option<usize>),
+    ElementNotFoundAtField(String, Name),
     UnsupportedType,
     ExpectedArrayOrComplexType,
     ExpectedNull,
@@ -37,10 +37,10 @@ impl Display for Error {
         match self {
             Error::Message(msg) => formatter.write_str(msg),
             Error::ElementNotFoundAtField(element, field) =>
-                formatter.write_fmt(format_args!("no element found in {:?} with field {:?}", element, field)),
+                formatter.write_fmt(format_args!("no element found in {} with field {:?}", element, field)),
             Error::ElementNotFoundAtIndex(element, index) =>
                 formatter.write_fmt(format_args!(
-                    "no element found in {:?} at index {}",
+                    "no element found in {} at index {}",
                     element,
                     index.map_or("<none>".to_string(), |index| index.to_string()
                 ))),
@@ -120,8 +120,8 @@ impl<'de, T: Deserialize<'de>> serde::Deserialize<'de> for FieldValue<T> {
     }
 }
 
-pub struct ElementDeserializer {
-    input: Element,
+pub struct ElementDeserializer<'e> {
+    input: Element<'e>,
     value_index: Option<usize>,
 }
 
@@ -152,7 +152,7 @@ macro_rules! impl_deserialize {
             visitor.$visit(
                 $_self.input
                     .get_at::<$blapi_type>($_self.value_index.unwrap_or(0))
-                    .ok_or(Error::ElementNotFoundAtIndex($_self.input.clone(), $_self.value_index))?
+                    .ok_or(Error::ElementNotFoundAtIndex(format!("{:?}", $_self.input), $_self.value_index))?
             )
         }
     };
@@ -162,14 +162,14 @@ macro_rules! impl_deserialize {
             visitor.$visit(
                 $_self.input
                     .get_at::<$blapi_type>($_self.value_index.unwrap_or(0))
-                    .ok_or(Error::ElementNotFoundAtIndex($_self.input.clone(), $_self.value_index))?
+                    .ok_or(Error::ElementNotFoundAtIndex(format!("{:?}", $_self.input), $_self.value_index))?
                 as $dest_type
             )
         }
     };
 }
 
-impl ElementDeserializer {
+impl ElementDeserializer<'_> {
     fn is_null(&self) -> Result<bool> {
         match self.value_index {
             Some(index) => self.input.is_null_value(index).map_err(|err| Error::BlpApiError(err)),
@@ -178,7 +178,7 @@ impl ElementDeserializer {
     }
 }
 
-impl<'de, 'a> serde::Deserializer<'de> for &'a mut ElementDeserializer {
+impl<'de, 'a> serde::Deserializer<'de> for &'a mut ElementDeserializer<'a> {
     type Error = Error;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
@@ -294,7 +294,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut ElementDeserializer {
         let element = match self.value_index {
             Some(index) => self.input
                 .get_at::<Element>(index)
-                .ok_or_else(|| Error::ElementNotFoundAtIndex(self.input.clone(), Some(index)))?,
+                .ok_or_else(|| Error::ElementNotFoundAtIndex(format!("{:?}", self.input), Some(index)))?,
             None => self.input.clone(),
         };
         visitor.visit_seq(FieldBased { element, fields: fields.iter() })
@@ -413,7 +413,7 @@ impl<'de, 'a, F> serde::Deserializer<'de> for &'a mut ErrorDeserializer<F>
 
 struct ElementsIterator<'e> {
     it: Elements<'e>,
-    current_element: Option<Element>,
+    current_element: Option<Element<'e>>,
 }
 
 impl<'e, 'de> MapAccess<'de> for ElementsIterator<'e> {
@@ -450,13 +450,13 @@ impl<'e, 'de> MapAccess<'de> for ElementsIterator<'e> {
     }
 }
 
-struct FieldBased {
-    element: Element,
+struct FieldBased<'e> {
+    element: Element<'e>,
     // TODO: this should use Name instead
     fields: std::slice::Iter<'static, &'static str>,
 }
 
-impl<'de> SeqAccess<'de> for FieldBased {
+impl<'a, 'de> SeqAccess<'de> for FieldBased<'a> {
     type Error = Error;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<<T as DeserializeSeed<'de>>::Value>> where
@@ -477,7 +477,7 @@ impl<'de> SeqAccess<'de> for FieldBased {
                     },
                     None => {
                         let mut de = ErrorDeserializer {
-                            error_generator_fn: || Error::ElementNotFoundAtField(self.element.clone(), Name::new(field)),
+                            error_generator_fn: || Error::ElementNotFoundAtField(format!("{:?}", self.element), Name::new(field)),
                         };
                         seed.deserialize(&mut de).map(Some)
                     },
@@ -493,7 +493,7 @@ impl<'de> SeqAccess<'de> for FieldBased {
 }
 
 struct IndexBased<'a> {
-    de: &'a mut ElementDeserializer,
+    de: &'a mut ElementDeserializer<'a>,
     indices: std::ops::Range<usize>,
     use_values: bool,
 }
@@ -517,7 +517,7 @@ impl<'de, 'a> SeqAccess<'de> for IndexBased<'a> {
                         },
                         None => {
                             let mut de = ErrorDeserializer {
-                                error_generator_fn: || Error::ElementNotFoundAtIndex(self.de.input.clone(), Some(index)),
+                                error_generator_fn: || Error::ElementNotFoundAtIndex(format!("{:?}", self.de.input), Some(index)),
                             };
                             seed.deserialize(&mut de).map(Some)
                         },
@@ -664,8 +664,8 @@ mod tests {
             .append_message_from_json(Name::new("SubscriptionStarted"), None, msg_contents)?
             .build();
 
-        let element = event.messages().next().unwrap().element();
-        let exceptions: Vec<_> = element
+        let msg = event.messages().next().unwrap();
+        let exceptions: Vec<_> = msg.element()
             .get_element("exceptions").unwrap()
             .values::<Element>()
             .map(|value| from_element::<Exception>(value).unwrap())
@@ -731,8 +731,8 @@ mod tests {
             reason: HashMap<String, String>,
         }
 
-        let element = event.messages().next().unwrap().element();
-        let exception = element
+        let msg = event.messages().next().unwrap();
+        let exception = msg.element()
             .get_element("exceptions").unwrap()
             .values::<Element>()
             .map(|value| from_element::<ExceptionWithMap>(value).unwrap())
@@ -790,8 +790,8 @@ mod tests {
             }
         "#)?;
 
-        let element = event.messages().next().unwrap().element();
-        let msg = from_element::<SubscriptionStarted>(element).unwrap();
+        let msg = event.messages().next().unwrap();
+        let msg = from_element::<SubscriptionStarted>(msg.element()).unwrap();
 
         assert_eq!(
             msg,

@@ -8,6 +8,7 @@ use std::ffi::CStr;
 use std::ptr;
 use std::os::raw::c_char;
 use std::fmt::{Debug, Formatter};
+use std::marker::PhantomData;
 
 /// A `Request`
 ///
@@ -49,13 +50,13 @@ impl Request {
 
     /// Convert the request to an Element
     pub fn element(&self) -> Element {
-        Element { ptr: self.elements }
+        Element { ptr: self.elements, _marker: PhantomData }
     }
 
     /// Append a new value to the existing inner Element sequence defined by name
     pub fn append<V: SetValue>(&mut self, name: &str, value: V) -> Result<(), Error> {
-        let mut element = self
-            .element()
+        let element = self.element();
+        let mut element = element
             .get_element(name)
             .ok_or_else(|| Error::NotFound(name.to_owned()))?;
         element.append(value)

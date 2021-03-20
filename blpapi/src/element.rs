@@ -73,14 +73,15 @@ impl From<blpapi_DataType_t> for DataType {
 
 /// An element
 #[derive(Clone)]
-pub struct Element {
+pub struct Element<'a> {
     pub(crate) ptr: *mut blpapi_Element_t,
+    pub(crate) _marker: PhantomData<&'a ()>,
 }
 
-impl Element {
+impl Element<'_> {
     unsafe fn opt(res: c_int, ptr: *mut blpapi_Element_t) -> Option<Self> {
         if res == 0 {
-            Some(Element { ptr })
+            Some(Element { ptr, _marker: PhantomData })
         } else {
             None
         }
@@ -177,7 +178,7 @@ impl Element {
         unsafe {
             let mut ptr = ptr::null_mut();
             Error::check(blpapi_Element_appendElement(self.ptr, &mut ptr as *mut _))?;
-            Ok(Element { ptr })
+            Ok(Element { ptr, _marker: PhantomData })
         }
     }
 
@@ -289,20 +290,20 @@ impl Element {
     }
 }
 
-impl Debug for Element {
+impl Debug for Element<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("Element[name={:?} data_type={:?}]", self.name(), self.data_type()))
     }
 }
 
-impl Display for Element {
+impl Display for Element<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.print(f, 0, 4).map_err(|_| std::fmt::Error)
     }
 }
 
-unsafe impl Send for Element {}
-unsafe impl Sync for Element {}
+unsafe impl Send for Element<'_> {}
+unsafe impl Sync for Element<'_> {}
 
 /// A trait to represent an Element value
 pub trait GetValue<'e>: Sized {
@@ -546,13 +547,13 @@ impl<'e, T: GetValue<'e>> GetValue<'e> for Vec<T> {
     }
 }
 
-impl<'e> GetValue<'e> for Element {
+impl<'e> GetValue<'e> for Element<'e> {
     fn get_at(element: &'e Element, index: usize) -> Option<Self> {
         unsafe {
             let mut ptr = ptr::null_mut();
             let res = blpapi_Element_getValueAsElement(element.ptr, &mut ptr as *mut _, index);
             if res == 0 {
-                Some(Element { ptr })
+                Some(Element { ptr, _marker: PhantomData })
             } else {
                 None
             }
@@ -602,7 +603,7 @@ impl<'a> SetValue for &'a Datetime {
 
 /// An iterator over values
 pub struct Values<'e, V> {
-    element: &'e Element,
+    element: &'e Element<'e>,
     i: usize,
     len: usize,
     _phantom: PhantomData<V>,
@@ -635,15 +636,15 @@ impl<'e> GetValue<'e> for chrono::NaiveDate {
 
 /// An iterator over elements
 pub struct Elements<'e> {
-    element: &'e Element,
+    element: &'e Element<'e>,
     i: usize,
     len: usize,
 }
 
 impl<'e> Iterator for Elements<'e> {
-    type Item = Element;
+    type Item = Element<'e>;
 
-    fn next(&mut self) -> Option<Element> {
+    fn next(&mut self) -> Option<Self::Item> {
         if self.i == self.len {
             return None;
         }

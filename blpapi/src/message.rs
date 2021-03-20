@@ -3,6 +3,7 @@ use blpapi_sys::*;
 use std::ffi::CStr;
 use std::fmt::{Display, Debug, Formatter};
 use std::os::raw::{c_int, c_uint};
+use std::marker::PhantomData;
 
 #[derive(Debug, PartialOrd, PartialEq)]
 pub enum FragmentType {
@@ -76,7 +77,7 @@ impl Message {
     /// Get corresponding element
     pub fn element(&self) -> Element {
         let elements = unsafe { blpapi_Message_elements(self.0) };
-        Element { ptr: elements }
+        Element { ptr: elements, _marker: PhantomData }
     }
 
     pub fn fragment_type(&self) -> FragmentType {
