@@ -16,7 +16,6 @@ pub enum Error {
     // field is missing.
     Message(String),
 
-    ElementNotFoundAtIndex(String, Option<usize>),
     ElementNotFoundAtField(String, Name),
     UnsupportedType,
     ExpectedArrayOrComplexType,
@@ -40,12 +39,6 @@ impl Display for Error {
             Error::Message(msg) => formatter.write_str(msg),
             Error::ElementNotFoundAtField(element, field) =>
                 formatter.write_fmt(format_args!("no element found in {} with field {:?}", element, field)),
-            Error::ElementNotFoundAtIndex(element, index) =>
-                formatter.write_fmt(format_args!(
-                    "no element found in {} at index {}",
-                    element,
-                    index.map_or("<none>".to_string(), |index| index.to_string()
-                ))),
             Error::UnsupportedType => formatter.write_str("unsupported type"),
             Error::ExpectedNull => formatter.write_str("expected null value"),
             Error::ExpectedValue => formatter.write_str("expected value in map"),
@@ -155,7 +148,7 @@ macro_rules! impl_deserialize {
             visitor.$visit(
                 $_self.input
                     .get_at::<$blapi_type>($_self.value_index.unwrap_or(0))
-                    .ok_or(Error::ElementNotFoundAtIndex(format!("{:?}", $_self.input), $_self.value_index))?
+                    .map_err(|err| Error::BlpApiError(err))?
             )
         }
     };
@@ -165,7 +158,7 @@ macro_rules! impl_deserialize {
             visitor.$visit(
                 $_self.input
                     .get_at::<$blapi_type>($_self.value_index.unwrap_or(0))
-                    .ok_or(Error::ElementNotFoundAtIndex(format!("{:?}", $_self.input), $_self.value_index))?
+                    .map_err(|err| Error::BlpApiError(err))?
                 as $dest_type
             )
         }
@@ -297,7 +290,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut ElementDeserializer<'a> {
         let element = match self.value_index {
             Some(index) => self.input
                 .get_at::<Element>(index)
-                .ok_or_else(|| Error::ElementNotFoundAtIndex(format!("{:?}", self.input), Some(index)))?,
+                .map_err(|err| Error::BlpApiError(err))?,
             None => self.input.clone(),
         };
         visitor.visit_seq(FieldBased { element, fields: fields.iter() })
@@ -478,22 +471,20 @@ impl<'a, 'de> SeqAccess<'de> for FieldBased<'a> {
     {
         match self.fields.next() {
             Some(field) => {
-                let element = if self.element.has_element(field, false) {
-                    self.element.get_element(field)
-                } else {
-                    None
-                };
+                if !self.element.has_element(field, false) {
+                    let mut de = ErrorDeserializer {
+                        error_generator_fn: || Error::ElementNotFoundAtField(format!("{:?}", self.element), Name::new(field)),
+                    };
+                    return seed.deserialize(&mut de).map(Some);
+                }
 
-                match element {
-                    Some(element) => {
+                match self.element.get_element(field) {
+                    Ok(element) => {
                         let mut de = ElementDeserializer { input: element, value_index: None };
                         seed.deserialize(&mut de).map(Some)
                     },
-                    None => {
-                        let mut de = ErrorDeserializer {
-                            error_generator_fn: || Error::ElementNotFoundAtField(format!("{:?}", self.element), Name::new(field)),
-                        };
-                        seed.deserialize(&mut de).map(Some)
+                    Err(err) => {
+                        Err(Error::BlpApiError(err))
                     },
                 }
             },
@@ -525,15 +516,12 @@ impl<'de, 'a> SeqAccess<'de> for IndexBased<'a> {
                     seed.deserialize(&mut de).map(Some)
                 } else {
                     match self.de.input.get_element_at(index) {
-                        Some(element) => {
+                        Ok(element) => {
                             let mut de = ElementDeserializer { input: element, value_index: None };
                             seed.deserialize(&mut de).map(Some)
                         },
-                        None => {
-                            let mut de = ErrorDeserializer {
-                                error_generator_fn: || Error::ElementNotFoundAtIndex(format!("{:?}", self.de.input), Some(index)),
-                            };
-                            seed.deserialize(&mut de).map(Some)
+                        Err(err) => {
+                            Err(Error::BlpApiError(err))
                         },
                     }
                 }

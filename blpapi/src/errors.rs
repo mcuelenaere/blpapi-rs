@@ -86,8 +86,6 @@ impl BlpApiError {
 pub enum Error {
     /// Generic blpapi error return
     Generic(i32),
-    /// Some element were not found
-    NotFound(String),
     /// Timeout event
     TimeOut,
     StringConversionError(Box<dyn std::error::Error>),

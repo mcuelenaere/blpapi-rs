@@ -57,16 +57,14 @@ impl Request {
     pub fn append<V: SetValue>(&mut self, name: &str, value: V) -> Result<(), Error> {
         let element = self.element();
         let mut element = element
-            .get_element(name)
-            .ok_or_else(|| Error::NotFound(name.to_owned()))?;
+            .get_element(name)?;
         element.append(value)
     }
 
     /// Append a new value to the existing inner Element sequence defined by name
     pub fn append_named<V: SetValue>(&mut self, name: &Name, value: V) -> Result<(), Error> {
         self.element()
-            .get_named_element(name)
-            .ok_or_else(|| Error::NotFound(name.to_string_lossy()))?
+            .get_named_element(name)?
             .append(value)
     }
 }
