@@ -600,15 +600,6 @@ impl<'e, V: GetValue<'e>> Iterator for Values<'e, V> {
     }
 }
 
-#[cfg(feature = "dates")]
-impl<'e> GetValue<'e> for chrono::NaiveDate {
-    fn get_at(element: &'e Element, index: usize) -> Result<Self, Error> {
-        element.get_at::<Datetime>(index).map(|d: Datetime| {
-            chrono::NaiveDate::from_ymd(d.0.year as i32, d.0.month as u32, d.0.day as u32)
-        })
-    }
-}
-
 /// An iterator over elements
 pub struct Elements<'e> {
     element: &'e Element<'e>,
