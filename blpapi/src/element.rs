@@ -263,14 +263,14 @@ impl Element<'_> {
         res != 0
     }
 
-    // Format this Element to the specified output 'stream' at the
-    // (absolute value of) the optionally specified indentation 'level' and
-    // return a reference to 'stream'. If 'level' is specified, optionally
-    // specify 'spacesPerLevel', the number of spaces per indentation level
-    // for this and all of its nested objects. If 'level' is negative,
-    // suppress indentation of the first line. If 'spacesPerLevel' is
-    // negative, format the entire output on one line, suppressing all but
-    // the initial indentation (as governed by 'level').
+    /// Format this Element to the specified output 'stream' at the
+    /// (absolute value of) the optionally specified indentation 'level' and
+    /// return a reference to 'stream'. If 'level' is specified, optionally
+    /// specify 'spacesPerLevel', the number of spaces per indentation level
+    /// for this and all of its nested objects. If 'level' is negative,
+    /// suppress indentation of the first line. If 'spacesPerLevel' is
+    /// negative, format the entire output on one line, suppressing all but
+    /// the initial indentation (as governed by 'level').
     pub fn print(&self, f: &mut Formatter<'_>, level: isize, spaces_per_level: isize) -> Result<(), Error> {
         let res = unsafe {
             let stream = std::mem::transmute(f);
