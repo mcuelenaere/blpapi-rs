@@ -4,6 +4,7 @@ use crate::name::Name;
 use serde::de::{Visitor, SeqAccess, DeserializeSeed, MapAccess};
 use std::fmt::{self, Display};
 use std::str::Utf8Error;
+use std::ffi::CStr;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -116,53 +117,16 @@ impl<'de, T: Deserialize<'de>> serde::Deserialize<'de> for FieldValue<T> {
     }
 }
 
+pub fn from_element<'e, T>(input: Element<'e>) -> Result<T>
+    where T: Deserialize<'e>
+{
+    let mut deserializer = ElementDeserializer { input, value_index: None };
+    T::deserialize(&mut deserializer)
+}
+
 pub struct ElementDeserializer<'e> {
     input: Element<'e>,
     value_index: Option<usize>,
-}
-
-pub fn from_element<'de, T>(input: Element) -> Result<T>
-    where T: Deserialize<'de>
-{
-    let mut deserializer = ElementDeserializer { input, value_index: None };
-    let t = T::deserialize(&mut deserializer)?;
-    Ok(t)
-}
-
-macro_rules! impl_deserialize {
-    ($deserialize:ident($_self:ident) => Err($err:expr)) => {
-        fn $deserialize<V>($_self, _: V) -> Result<<V as Visitor<'de>>::Value> where
-            V: Visitor<'de> {
-            Err($err)
-        }
-    };
-    ($deserialize:ident($_self:ident, $($arg_type:ty),+) => Err($err:expr)) => {
-        fn $deserialize<V>($_self, $(_: $arg_type),+, _: V) -> Result<<V as Visitor<'de>>::Value> where
-            V: Visitor<'de> {
-            Err($err)
-        }
-    };
-    ($deserialize:ident($_self:ident) => $visit:ident($blapi_type:ty)) => {
-        fn $deserialize<V>($_self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
-            V: Visitor<'de> {
-            visitor.$visit(
-                $_self.input
-                    .get_at::<$blapi_type>($_self.value_index.unwrap_or(0))
-                    .map_err(|err| Error::BlpApiError(err))?
-            )
-        }
-    };
-    ($deserialize:ident($_self:ident) => $visit:ident($blapi_type:ty as $dest_type:ty)) => {
-        fn $deserialize<V>($_self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
-            V: Visitor<'de> {
-            visitor.$visit(
-                $_self.input
-                    .get_at::<$blapi_type>($_self.value_index.unwrap_or(0))
-                    .map_err(|err| Error::BlpApiError(err))?
-                as $dest_type
-            )
-        }
-    };
 }
 
 impl ElementDeserializer<'_> {
@@ -174,10 +138,46 @@ impl ElementDeserializer<'_> {
     }
 }
 
-impl<'de, 'a> serde::Deserializer<'de> for &'a mut ElementDeserializer<'a> {
+macro_rules! impl_deserialize {
+    ($deserialize:ident($_self:ident) => Err($err:expr)) => {
+        fn $deserialize<V>($_self, _: V) -> Result<V::Value> where
+            V: Visitor<'de> {
+            Err($err)
+        }
+    };
+    ($deserialize:ident($_self:ident, $($arg_type:ty),+) => Err($err:expr)) => {
+        fn $deserialize<V>($_self, $(_: $arg_type),+, _: V) -> Result<V::Value> where
+            V: Visitor<'de> {
+            Err($err)
+        }
+    };
+    ($deserialize:ident($_self:ident) => $visit:ident($blapi_type:ty)) => {
+        fn $deserialize<V>($_self, visitor: V) -> Result<V::Value> where
+            V: Visitor<'de> {
+            visitor.$visit(
+                $_self.input
+                    .get_at::<$blapi_type>($_self.value_index.unwrap_or(0))
+                    .map_err(|err| Error::BlpApiError(err))?
+            )
+        }
+    };
+    ($deserialize:ident($_self:ident) => $visit:ident($blapi_type:ty, $mapper:expr)) => {
+        fn $deserialize<V>($_self, visitor: V) -> Result<V::Value> where
+            V: Visitor<'de> {
+            let value = $_self.input
+                .get_at::<$blapi_type>($_self.value_index.unwrap_or(0))
+                .map_err(|err| Error::BlpApiError(err))
+                .and_then($mapper)?
+            ;
+            visitor.$visit(value)
+        }
+    };
+}
+
+impl<'a: 'de, 'de> serde::Deserializer<'de> for &'a mut ElementDeserializer<'de> {
     type Error = Error;
 
-    fn deserialize_any<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value> where
         V: Visitor<'de> {
         if self.is_null()? {
             return visitor.visit_none();
@@ -190,7 +190,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut ElementDeserializer<'a> {
             DataType::Int64 => self.deserialize_i64(visitor),
             DataType::Float32 => self.deserialize_f32(visitor),
             DataType::Float64 => self.deserialize_f64(visitor),
-            DataType::String => self.deserialize_string(visitor),
+            DataType::String => self.deserialize_str(visitor),
             DataType::Sequence => self.deserialize_seq(visitor),
             DataType::Choice => self.deserialize_seq(visitor),
             _ => Err(Error::UnsupportedType),
@@ -202,24 +202,23 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut ElementDeserializer<'a> {
     impl_deserialize!(deserialize_i32(self) => visit_i32(i32));
     impl_deserialize!(deserialize_i64(self) => visit_i64(i64));
 
-    impl_deserialize!(deserialize_u8(self) => visit_u8(i8 as u8));
+    impl_deserialize!(deserialize_u8(self) => visit_u8(i8, |v| Ok(v as u8)));
     impl_deserialize!(deserialize_u16(self) => Err(Error::UnsupportedType));
-    impl_deserialize!(deserialize_u32(self) => visit_u32(i32 as u32));
-    impl_deserialize!(deserialize_u64(self) => visit_u64(i64 as u64));
+    impl_deserialize!(deserialize_u32(self) => visit_u32(i32, |v| Ok(v as u32)));
+    impl_deserialize!(deserialize_u64(self) => visit_u64(i64, |v| Ok(v as u64)));
 
     impl_deserialize!(deserialize_f32(self) => visit_f32(f32));
     impl_deserialize!(deserialize_f64(self) => visit_f64(f64));
 
     impl_deserialize!(deserialize_bool(self) => visit_bool(bool));
-//impl_deserialize!(deserialize_char(self) => visit_char(i8 as char);
-    impl_deserialize!(deserialize_char(self) => Err(Error::UnsupportedType));
-    impl_deserialize!(deserialize_str(self) => visit_string(String));
+    impl_deserialize!(deserialize_char(self) => visit_char(i8, |v| Ok(v as u8 as char)));
+    impl_deserialize!(deserialize_str(self) => visit_borrowed_str(&CStr, |s| s.to_str().map_err(|err| Error::ExpectedValidString(err))));
     impl_deserialize!(deserialize_string(self) => visit_string(String));
 
     impl_deserialize!(deserialize_bytes(self) => Err(Error::UnsupportedType));
     impl_deserialize!(deserialize_byte_buf(self) => Err(Error::UnsupportedType));
 
-    fn deserialize_option<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value> where
         V: Visitor<'de> {
         if self.is_null()? {
             visitor.visit_none()
@@ -228,7 +227,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut ElementDeserializer<'a> {
         }
     }
 
-    fn deserialize_unit<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value> where
         V: Visitor<'de> {
         if self.is_null()? {
             visitor.visit_unit()
@@ -237,46 +236,46 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut ElementDeserializer<'a> {
         }
     }
 
-    fn deserialize_unit_struct<V>(self, _: &'static str, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    fn deserialize_unit_struct<V>(self, _: &'static str, visitor: V) -> Result<V::Value> where
         V: Visitor<'de> {
         self.deserialize_unit(visitor)
     }
 
-    fn deserialize_newtype_struct<V>(self, _: &'static str, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    fn deserialize_newtype_struct<V>(self, _: &'static str, visitor: V) -> Result<V::Value> where
         V: Visitor<'de> {
         visitor.visit_newtype_struct(self)
     }
 
-    fn deserialize_seq<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value> where
         V: Visitor<'de> {
         if self.input.is_array() {
             let len = self.input.num_values();
-            visitor.visit_seq(IndexBased { de: self, indices: 0..len, use_values: true })
+            visitor.visit_seq(IndexBased { element: self.input.clone(), indices: 0..len, use_values: true })
         } else if self.input.is_complex_type() {
             let len = self.input.num_elements();
-            visitor.visit_seq(IndexBased { de: self, indices: 0..len, use_values: false })
+            visitor.visit_seq(IndexBased { element: self.input.clone(), indices: 0..len, use_values: false })
         } else {
             Err(Error::ExpectedArrayOrComplexType)
         }
     }
 
-    fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<V::Value> where
         V: Visitor<'de> {
         if self.input.is_array() {
-            visitor.visit_seq(IndexBased { de: self, indices: 0..len, use_values: true })
+            visitor.visit_seq(IndexBased { element: self.input.clone(), indices: 0..len, use_values: true })
         } else if self.input.is_complex_type() {
-            visitor.visit_seq(IndexBased { de: self, indices: 0..len, use_values: false })
+            visitor.visit_seq(IndexBased { element: self.input.clone(), indices: 0..len, use_values: false })
         } else {
             Err(Error::ExpectedArrayOrComplexType)
         }
     }
 
-    fn deserialize_tuple_struct<V>(self, _: &'static str, len: usize, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    fn deserialize_tuple_struct<V>(self, _: &'static str, len: usize, visitor: V) -> Result<V::Value> where
         V: Visitor<'de> {
         self.deserialize_tuple(len, visitor)
     }
 
-    fn deserialize_map<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value> where
         V: Visitor<'de> {
         if !self.input.is_complex_type() {
             return Err(Error::UnsupportedType);
@@ -285,7 +284,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut ElementDeserializer<'a> {
         visitor.visit_map(ElementsIterator { it: self.input.elements(), current_element: None })
     }
 
-    fn deserialize_struct<V>(self, _: &'static str, fields: &'static [&'static str], visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    fn deserialize_struct<V>(self, _: &'static str, fields: &'static [&'static str], visitor: V) -> Result<V::Value> where
         V: Visitor<'de> {
         let element = match self.value_index {
             Some(index) => self.input
@@ -296,17 +295,17 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut ElementDeserializer<'a> {
         visitor.visit_seq(FieldBased { element, fields: fields.iter() })
     }
 
-    fn deserialize_enum<V>(self, _: &'static str, variants: &'static [&'static str], visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    fn deserialize_enum<V>(self, _: &'static str, variants: &'static [&'static str], visitor: V) -> Result<V::Value> where
         V: Visitor<'de> {
         visitor.visit_seq(FieldBased { element: self.input.clone(), fields: variants.iter() })
     }
 
-    fn deserialize_identifier<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value> where
         V: Visitor<'de> {
         self.deserialize_str(visitor)
     }
 
-    fn deserialize_ignored_any<V>(self, visitor: V) -> Result<<V as Visitor<'de>>::Value> where
+    fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value> where
         V: Visitor<'de> {
         self.deserialize_any(visitor)
     }
@@ -316,7 +315,7 @@ struct NameDeserializer {
     input: Name,
 }
 
-impl<'de, 'a> serde::Deserializer<'de> for &'a mut NameDeserializer {
+impl<'a, 'de> serde::Deserializer<'de> for &'a mut NameDeserializer {
     type Error = Error;
 
     impl_deserialize!(deserialize_any(self) => Err(Error::UnsupportedType));
@@ -382,7 +381,7 @@ impl<F: Fn() -> Error> ErrorDeserializer<F>
     }
 }
 
-impl<'de, 'a, F> serde::Deserializer<'de> for &'a mut ErrorDeserializer<F>
+impl<'a, 'de: 'a, F> serde::Deserializer<'de> for &'a mut ErrorDeserializer<F>
     where F: Fn() -> Error
 {
     type Error = Error;
@@ -423,7 +422,7 @@ struct ElementsIterator<'e> {
     current_element: Option<Element<'e>>,
 }
 
-impl<'e, 'de> MapAccess<'de> for ElementsIterator<'e> {
+impl<'de> MapAccess<'de> for ElementsIterator<'de> {
     type Error = Error;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<<K as DeserializeSeed<'de>>::Value>> where
@@ -463,10 +462,10 @@ struct FieldBased<'e> {
     fields: std::slice::Iter<'static, &'static str>,
 }
 
-impl<'a, 'de> SeqAccess<'de> for FieldBased<'a> {
+impl<'a: 'de, 'de> SeqAccess<'de> for FieldBased<'a> {
     type Error = Error;
 
-    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<<T as DeserializeSeed<'de>>::Value>> where
+    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>> where
         T: DeserializeSeed<'de>
     {
         match self.fields.next() {
@@ -478,7 +477,7 @@ impl<'a, 'de> SeqAccess<'de> for FieldBased<'a> {
                     return seed.deserialize(&mut de).map(Some);
                 }
 
-                match self.element.get_element(field) {
+                /*match self.element.get_element(field) {
                     Ok(element) => {
                         let mut de = ElementDeserializer { input: element, value_index: None };
                         seed.deserialize(&mut de).map(Some)
@@ -486,7 +485,8 @@ impl<'a, 'de> SeqAccess<'de> for FieldBased<'a> {
                     Err(err) => {
                         Err(Error::BlpApiError(err))
                     },
-                }
+                }*/
+                Ok(None)
             },
             None => Ok(None),
         }
@@ -497,25 +497,25 @@ impl<'a, 'de> SeqAccess<'de> for FieldBased<'a> {
     }
 }
 
-struct IndexBased<'a> {
-    de: &'a mut ElementDeserializer<'a>,
+struct IndexBased<'e> {
+    element: Element<'e>,
     indices: std::ops::Range<usize>,
     use_values: bool,
 }
 
-impl<'de, 'a> SeqAccess<'de> for IndexBased<'a> {
+impl<'a: 'de, 'de> SeqAccess<'de> for IndexBased<'a> {
     type Error = Error;
 
-    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<<T as DeserializeSeed<'de>>::Value>> where
+    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>> where
         T: DeserializeSeed<'de>
     {
         match self.indices.next() {
             Some(index) => {
                 if self.use_values {
-                    let mut de = ElementDeserializer { input: self.de.input.clone(), value_index: Some(index) };
+                    let mut de = ElementDeserializer { input: self.element.clone(), value_index: Some(index) };
                     seed.deserialize(&mut de).map(Some)
                 } else {
-                    match self.de.input.get_element_at(index) {
+                    /*match self.element.get_element_at(index) {
                         Ok(element) => {
                             let mut de = ElementDeserializer { input: element, value_index: None };
                             seed.deserialize(&mut de).map(Some)
@@ -523,7 +523,8 @@ impl<'de, 'a> SeqAccess<'de> for IndexBased<'a> {
                         Err(err) => {
                             Err(Error::BlpApiError(err))
                         },
-                    }
+                    }*/
+                    Ok(None)
                 }
             },
             None => Ok(None),
