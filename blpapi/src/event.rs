@@ -20,6 +20,7 @@ impl Event {
         let ptr = unsafe { blpapi_MessageIterator_create(self.0) };
         MessageIterator {
             ptr,
+            current_msg: ptr::null_mut(),
             _phantom: PhantomData,
         }
     }
@@ -50,6 +51,7 @@ unsafe impl Sync for Event {}
 /// A message iterator
 pub struct MessageIterator<'a> {
     pub(crate) ptr: *mut blpapi_MessageIterator_t,
+    current_msg: *mut blpapi_Message_t,
     _phantom: PhantomData<&'a Event>,
 }
 
@@ -63,13 +65,12 @@ impl<'a> Iterator for MessageIterator<'a> {
     type Item = Message;
 
     fn next(&mut self) -> Option<Message> {
-        let mut ptr = ptr::null_mut();
-        let res = unsafe { blpapi_MessageIterator_next(self.ptr, &mut ptr as *mut _) };
+        let res = unsafe { blpapi_MessageIterator_next(self.ptr, &mut self.current_msg) };
         if res == 0 {
             // Make sure to increment the refcount, so that we can safely drop the message
             // when we're done with it (or that it may outlive this MessageIterator).
-            unsafe { blpapi_Message_addRef(ptr) };
-            Some(Message(ptr))
+            unsafe { blpapi_Message_addRef(self.current_msg) };
+            Some(Message(self.current_msg))
         } else {
             None
         }
